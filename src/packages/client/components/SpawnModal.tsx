@@ -1,0 +1,361 @@
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { store, useStore } from '../store';
+import { AGENT_CLASS_CONFIG, LOTR_NAMES, CHARACTER_MODELS } from '../scene/config';
+import type { AgentClass } from '../../shared/types';
+import { intToHex } from '../utils/formatting';
+import { ModelPreview } from './ModelPreview';
+
+interface ClaudeSession {
+  sessionId: string;
+  projectPath: string;
+  lastModified: string;
+  messageCount: number;
+  firstMessage?: string;
+}
+
+interface SpawnModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSpawnStart: () => void;
+  onSpawnEnd: () => void;
+}
+
+/**
+ * Get a random unused LOTR name.
+ */
+function getRandomLotrName(usedNames: Set<string>): string {
+  const availableNames = LOTR_NAMES.filter((n) => !usedNames.has(n));
+  if (availableNames.length === 0) {
+    // All names used, add a number suffix
+    const baseName = LOTR_NAMES[Math.floor(Math.random() * LOTR_NAMES.length)];
+    return `${baseName}-${Date.now() % 1000}`;
+  }
+  return availableNames[Math.floor(Math.random() * availableNames.length)];
+}
+
+export function SpawnModal({ isOpen, onClose, onSpawnStart, onSpawnEnd }: SpawnModalProps) {
+  const { agents } = useStore();
+  const [name, setName] = useState('');
+  const [cwd, setCwd] = useState(() => localStorage.getItem('tide-last-cwd') || '');
+  const [selectedClass, setSelectedClass] = useState<AgentClass>('scout');
+  const [isSpawning, setIsSpawning] = useState(false);
+  const [hasError, setHasError] = useState(false);
+  const [showCreateDirPrompt, setShowCreateDirPrompt] = useState(false);
+  const [missingDirPath, setMissingDirPath] = useState('');
+  const [sessions, setSessions] = useState<ClaudeSession[]>([]);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [loadingSessions, setLoadingSessions] = useState(false);
+  const [useChrome, setUseChrome] = useState(true); // Enabled by default
+  const nameInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch Claude sessions
+  const fetchSessions = useCallback(async (directory?: string) => {
+    setLoadingSessions(true);
+    try {
+      const url = directory
+        ? `http://localhost:5174/api/agents/claude-sessions?cwd=${encodeURIComponent(directory)}`
+        : 'http://localhost:5174/api/agents/claude-sessions';
+      const res = await fetch(url);
+      const data = await res.json();
+      setSessions(data.sessions || []);
+    } catch (err) {
+      console.error('Failed to fetch sessions:', err);
+      setSessions([]);
+    } finally {
+      setLoadingSessions(false);
+    }
+  }, []);
+
+  // Fetch sessions when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      fetchSessions(cwd || undefined);
+    } else {
+      setSessions([]);
+      setSelectedSessionId(null);
+    }
+  }, [isOpen, fetchSessions]);
+
+  // Refetch sessions when cwd changes (debounced)
+  useEffect(() => {
+    if (!isOpen) return;
+    const timer = setTimeout(() => {
+      fetchSessions(cwd || undefined);
+      setSelectedSessionId(null);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [cwd, isOpen, fetchSessions]);
+
+  // Generate a new name when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      const usedNames = new Set(Array.from(agents.values()).map((a) => a.name));
+      setName(getRandomLotrName(usedNames));
+      if (nameInputRef.current) {
+        nameInputRef.current.focus();
+        nameInputRef.current.select();
+      }
+    }
+  }, [isOpen, agents]);
+
+  const handleSpawn = () => {
+    setHasError(false);
+
+    // If a session is selected, use its project path as cwd
+    const effectiveCwd = selectedSessionId
+      ? sessions.find(s => s.sessionId === selectedSessionId)?.projectPath || cwd
+      : cwd;
+
+    if (!effectiveCwd.trim()) {
+      setHasError(true);
+      return;
+    }
+
+    if (!name.trim()) {
+      // Name should be prefilled, but regenerate if somehow empty
+      const usedNames = new Set(Array.from(agents.values()).map((a) => a.name));
+      setName(getRandomLotrName(usedNames));
+      return;
+    }
+
+    localStorage.setItem('tide-last-cwd', effectiveCwd);
+    setIsSpawning(true);
+    onSpawnStart();
+
+    store.spawnAgent(name.trim(), selectedClass, effectiveCwd.trim(), undefined, selectedSessionId || undefined, useChrome);
+  };
+
+  const handleSuccess = () => {
+    setIsSpawning(false);
+    setName('');
+    onSpawnEnd();
+    onClose();
+  };
+
+  const handleError = () => {
+    setIsSpawning(false);
+    setHasError(true);
+    onSpawnEnd();
+  };
+
+  const handleDirectoryNotFound = (path: string) => {
+    setIsSpawning(false);
+    setMissingDirPath(path);
+    setShowCreateDirPrompt(true);
+    onSpawnEnd();
+  };
+
+  const handleCreateDirectory = () => {
+    setShowCreateDirPrompt(false);
+    setIsSpawning(true);
+    onSpawnStart();
+    store.createDirectoryAndSpawn(missingDirPath, name.trim(), selectedClass);
+  };
+
+  const handleCancelCreateDir = () => {
+    setShowCreateDirPrompt(false);
+    setMissingDirPath('');
+  };
+
+  // Expose handlers for websocket callbacks
+  useEffect(() => {
+    (window as any).__spawnModalSuccess = handleSuccess;
+    (window as any).__spawnModalError = handleError;
+    (window as any).__spawnModalDirNotFound = handleDirectoryNotFound;
+    return () => {
+      delete (window as any).__spawnModalSuccess;
+      delete (window as any).__spawnModalError;
+      delete (window as any).__spawnModalDirNotFound;
+    };
+  }, [name, selectedClass]);
+
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      onClose();
+    }
+  };
+
+  if (!isOpen && !showCreateDirPrompt) return null;
+
+  // Show create directory confirmation dialog
+  if (showCreateDirPrompt) {
+    return (
+      <div
+        className="modal-overlay visible"
+        onClick={handleCancelCreateDir}
+        onKeyDown={(e) => e.key === 'Escape' && handleCancelCreateDir()}
+      >
+        <div className="modal confirm-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-header">Directory Not Found</div>
+          <div className="modal-body confirm-modal-body">
+            <p>The directory does not exist:</p>
+            <code className="confirm-modal-path">{missingDirPath}</code>
+            <p>Would you like to create it?</p>
+          </div>
+          <div className="modal-footer">
+            <button className="btn btn-secondary" onClick={handleCancelCreateDir}>
+              Cancel
+            </button>
+            <button className="btn btn-primary" onClick={handleCreateDirectory}>
+              Create Directory
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={`modal-overlay ${isOpen ? 'visible' : ''}`}
+      onClick={handleBackdropClick}
+      onKeyDown={handleKeyDown}
+    >
+      <div className="modal spawn-modal">
+        <div className="modal-header">Deploy New Agent</div>
+
+        <div className="modal-body spawn-modal-body">
+          {/* Left: Model Preview */}
+          <div className="spawn-preview-section">
+            <ModelPreview agentClass={selectedClass} width={180} height={220} />
+            <div className="spawn-preview-name">
+              {CHARACTER_MODELS.find((c) => c.id === selectedClass)?.name || selectedClass}
+            </div>
+          </div>
+
+          {/* Right: Form */}
+          <div className="spawn-form-section">
+            <div className="form-group">
+              <label className="form-label">Agent Name</label>
+              <input
+                ref={nameInputRef}
+                type="text"
+                className="form-input"
+                placeholder="Enter agent name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Working Directory</label>
+              <input
+                type="text"
+                className={`form-input ${hasError ? 'error' : ''}`}
+                placeholder="/path/to/project"
+                value={cwd}
+                onChange={(e) => {
+                  setCwd(e.target.value);
+                  setHasError(false);
+                }}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">
+                Link to Claude Session
+                <span className="form-label-hint">(optional)</span>
+              </label>
+              <div className="sessions-list">
+                {loadingSessions ? (
+                  <div className="sessions-loading">Loading sessions...</div>
+                ) : sessions.length === 0 ? (
+                  <div className="sessions-empty">No Claude sessions found</div>
+                ) : (
+                  sessions.map((session) => {
+                    const isSelected = selectedSessionId === session.sessionId;
+                    const age = Date.now() - new Date(session.lastModified).getTime();
+                    const ageStr = age < 60000 ? 'just now'
+                      : age < 3600000 ? `${Math.floor(age / 60000)}m ago`
+                      : age < 86400000 ? `${Math.floor(age / 3600000)}h ago`
+                      : `${Math.floor(age / 86400000)}d ago`;
+
+                    return (
+                      <div
+                        key={session.sessionId}
+                        className={`session-item ${isSelected ? 'selected' : ''}`}
+                        onClick={() => {
+                          if (isSelected) {
+                            setSelectedSessionId(null);
+                          } else {
+                            setSelectedSessionId(session.sessionId);
+                            setCwd(session.projectPath);
+                          }
+                        }}
+                      >
+                        <div className="session-item-header">
+                          <span className="session-item-path">{session.projectPath}</span>
+                          <span className="session-item-age">{ageStr}</span>
+                        </div>
+                        <div className="session-item-preview">
+                          {session.firstMessage || `${session.messageCount} messages`}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Character Model</label>
+              <div className="class-selector compact">
+                {CHARACTER_MODELS.map((char) => {
+                  const config = AGENT_CLASS_CONFIG[char.id];
+                  return (
+                    <div
+                      key={char.id}
+                      className={`class-option ${selectedClass === char.id ? 'selected' : ''}`}
+                      onClick={() => setSelectedClass(char.id)}
+                    >
+                      <div
+                        className="class-icon"
+                        style={{ background: `${intToHex(config.color)}20` }}
+                      >
+                        {config.icon}
+                      </div>
+                      <div className="class-name">{char.name}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="toggle-switch">
+                <input
+                  type="checkbox"
+                  className="toggle-input"
+                  checked={useChrome}
+                  onChange={(e) => setUseChrome(e.target.checked)}
+                />
+                <div className="toggle-track">
+                  <div className="toggle-thumb" />
+                </div>
+                <span className="toggle-label">
+                  <span className="toggle-icon">🌐</span>
+                  Use Chrome browser
+                </span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="btn btn-primary" onClick={handleSpawn} disabled={isSpawning}>
+            {isSpawning ? 'Deploying...' : 'Deploy'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

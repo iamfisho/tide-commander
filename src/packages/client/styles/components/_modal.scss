@@ -1,0 +1,260 @@
+@use '../variables' as *;
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity $transition-normal;
+
+  &.visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.modal {
+  background: $bg-secondary;
+  border: 1px solid $border-color;
+  border-radius: $radius-xl;
+  padding: 24px;
+  width: 400px;
+  max-width: 90vw;
+}
+
+.modal-header {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 20px;
+}
+
+.modal-body {
+  margin-bottom: 20px;
+}
+
+.modal-footer {
+  display: flex;
+  gap: 12px;
+}
+
+// Spawn modal specific
+.spawn-modal {
+  width: 580px;
+  max-width: 95vw;
+}
+
+.spawn-modal-body {
+  display: flex;
+  gap: 20px;
+}
+
+.spawn-preview-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.spawn-preview-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: $text-primary;
+  text-transform: capitalize;
+}
+
+.spawn-form-section {
+  flex: 1;
+  min-width: 0;
+}
+
+.model-preview {
+  border: 2px solid $border-color;
+  background: $bg-tertiary;
+}
+
+// Class selector
+.class-selector {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+
+  &.compact {
+    gap: 6px;
+
+    .class-option {
+      padding: 8px 4px;
+    }
+
+    .class-icon {
+      width: 28px;
+      height: 28px;
+      font-size: 16px;
+    }
+
+    .class-name {
+      font-size: 10px;
+    }
+  }
+}
+
+.class-option {
+  padding: 12px 8px;
+  background: $bg-tertiary;
+  border: 2px solid $border-color;
+  border-radius: $radius-lg;
+  cursor: pointer;
+  text-align: center;
+  transition: all $transition-fast;
+
+  &:hover {
+    border-color: $text-secondary;
+  }
+
+  &.selected {
+    border-color: $accent-blue;
+    background: rgba($accent-blue, 0.1);
+  }
+}
+
+.class-icon {
+  width: 32px;
+  height: 32px;
+  margin: 0 auto 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  border-radius: $radius-md;
+}
+
+.class-name {
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.class-gender {
+  font-size: 10px;
+  color: $text-secondary;
+  margin-top: 2px;
+}
+
+// Confirm modal (smaller dialog for confirmations)
+.confirm-modal {
+  width: 420px;
+  text-align: center;
+}
+
+.confirm-modal-body {
+  p {
+    margin: 0 0 12px;
+    color: $text-secondary;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+}
+
+.confirm-modal-path {
+  display: block;
+  background: $bg-tertiary;
+  padding: 10px 14px;
+  border-radius: $radius-md;
+  font-family: $font-mono;
+  font-size: 12px;
+  color: $accent-orange;
+  margin: 12px 0;
+  word-break: break-all;
+}
+
+.confirm-modal-note {
+  font-size: 12px;
+  color: $text-muted;
+  font-style: italic;
+}
+
+// Sessions list
+.form-label-hint {
+  font-weight: 400;
+  font-size: 11px;
+  color: $text-muted;
+  margin-left: 6px;
+}
+
+.sessions-list {
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid $border-color;
+  border-radius: $radius-md;
+  background: $bg-tertiary;
+}
+
+.sessions-loading,
+.sessions-empty {
+  padding: 16px;
+  text-align: center;
+  color: $text-muted;
+  font-size: 12px;
+  font-family: $font-mono;
+}
+
+.session-item {
+  padding: 10px 12px;
+  border-bottom: 1px solid $border-color;
+  cursor: pointer;
+  transition: all $transition-fast;
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  &:hover {
+    background: rgba($accent-blue, 0.1);
+  }
+
+  &.selected {
+    background: rgba($dracula-green, 0.15);
+    border-left: 3px solid $dracula-green;
+    padding-left: 9px;
+  }
+}
+
+.session-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.session-item-path {
+  font-size: 11px;
+  font-family: $font-mono;
+  color: $dracula-cyan;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.session-item-age {
+  font-size: 10px;
+  color: $text-muted;
+  flex-shrink: 0;
+}
+
+.session-item-preview {
+  font-size: 11px;
+  color: $text-secondary;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

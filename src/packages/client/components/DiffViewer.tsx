@@ -1,0 +1,355 @@
+import React, { useEffect, useRef, useMemo, useCallback } from 'react';
+import Prism from 'prismjs';
+import 'prismjs/components/prism-typescript';
+import 'prismjs/components/prism-javascript';
+import 'prismjs/components/prism-jsx';
+import 'prismjs/components/prism-tsx';
+import 'prismjs/components/prism-css';
+import 'prismjs/components/prism-scss';
+import 'prismjs/components/prism-json';
+import 'prismjs/components/prism-yaml';
+import 'prismjs/components/prism-markdown';
+import 'prismjs/components/prism-python';
+import 'prismjs/components/prism-bash';
+import 'prismjs/components/prism-rust';
+import 'prismjs/components/prism-go';
+import 'prismjs/components/prism-sql';
+import 'prismjs/components/prism-toml';
+import 'prismjs/components/prism-docker';
+
+interface DiffViewerProps {
+  originalContent: string;
+  modifiedContent: string;
+  filename: string;
+  language: string;
+}
+
+interface DiffLine {
+  num: number;
+  text: string;
+  highlighted: string;
+  type: 'unchanged' | 'added' | 'removed';
+}
+
+// Alignment point for scroll synchronization
+interface AlignmentPoint {
+  leftLine: number;  // Line index in left panel (0-based)
+  rightLine: number; // Line index in right panel (0-based)
+}
+
+// Highlight a single line using Prism
+function highlightLine(line: string, language: string): string {
+  if (!line) return '';
+  const grammar = Prism.languages[language];
+  if (!grammar) return escapeHtml(line);
+  return Prism.highlight(line, grammar, language);
+}
+
+// Escape HTML for safe rendering
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+// Compute diff lines and alignment points for intelligent scroll sync
+function computeDiff(original: string, modified: string, language: string): {
+  leftLines: DiffLine[];
+  rightLines: DiffLine[];
+  alignments: AlignmentPoint[];
+} {
+  const originalLines = original.split('\n');
+  const modifiedLines = modified.split('\n');
+
+  const prismLang = language === 'tsx' ? 'tsx' :
+                    language === 'typescript' ? 'typescript' :
+                    language === 'javascript' ? 'javascript' :
+                    language === 'jsx' ? 'jsx' :
+                    language || 'plaintext';
+
+  // Build LCS table
+  const m = originalLines.length;
+  const n = modifiedLines.length;
+  const dp: number[][] = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (originalLines[i - 1] === modifiedLines[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1] + 1;
+      } else {
+        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+      }
+    }
+  }
+
+  // Backtrack to find operations
+  type Op = { type: 'equal' | 'delete' | 'insert'; origIdx?: number; modIdx?: number };
+  const ops: Op[] = [];
+  let i = m, j = n;
+
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && originalLines[i - 1] === modifiedLines[j - 1]) {
+      ops.push({ type: 'equal', origIdx: i - 1, modIdx: j - 1 });
+      i--;
+      j--;
+    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+      ops.push({ type: 'insert', modIdx: j - 1 });
+      j--;
+    } else if (i > 0) {
+      ops.push({ type: 'delete', origIdx: i - 1 });
+      i--;
+    }
+  }
+
+  ops.reverse();
+
+  // Build lines for each side and track alignment points
+  const leftLines: DiffLine[] = [];
+  const rightLines: DiffLine[] = [];
+  const alignments: AlignmentPoint[] = [];
+
+  // Start alignment
+  alignments.push({ leftLine: 0, rightLine: 0 });
+
+  for (const op of ops) {
+    if (op.type === 'equal') {
+      // Add alignment point at each matching line
+      const text = originalLines[op.origIdx!];
+      const highlighted = highlightLine(text, prismLang);
+
+      leftLines.push({
+        num: op.origIdx! + 1,
+        text,
+        highlighted,
+        type: 'unchanged'
+      });
+
+      rightLines.push({
+        num: op.modIdx! + 1,
+        text,
+        highlighted,
+        type: 'unchanged'
+      });
+
+      // Track alignment for matching lines
+      alignments.push({
+        leftLine: leftLines.length,
+        rightLine: rightLines.length
+      });
+    } else if (op.type === 'delete') {
+      const text = originalLines[op.origIdx!];
+      const highlighted = highlightLine(text, prismLang);
+      leftLines.push({
+        num: op.origIdx! + 1,
+        text,
+        highlighted,
+        type: 'removed'
+      });
+    } else {
+      const text = modifiedLines[op.modIdx!];
+      const highlighted = highlightLine(text, prismLang);
+      rightLines.push({
+        num: op.modIdx! + 1,
+        text,
+        highlighted,
+        type: 'added'
+      });
+    }
+  }
+
+  // End alignment
+  alignments.push({
+    leftLine: leftLines.length,
+    rightLine: rightLines.length
+  });
+
+  return { leftLines, rightLines, alignments };
+}
+
+// Calculate target scroll position using alignment points
+function calculateTargetScroll(
+  sourceScroll: number,
+  sourceHeight: number,
+  targetHeight: number,
+  alignments: AlignmentPoint[],
+  lineHeight: number,
+  isLeftToRight: boolean
+): number {
+  if (sourceHeight <= 0 || targetHeight <= 0) return 0;
+
+  // Find which alignment segment we're in based on source scroll position
+  const sourceLine = sourceScroll / lineHeight;
+
+  let prevAlign: AlignmentPoint | null = null;
+  let nextAlign: AlignmentPoint | null = null;
+
+  for (let i = 0; i < alignments.length - 1; i++) {
+    const current = alignments[i];
+    const next = alignments[i + 1];
+    const currentSourceLine = isLeftToRight ? current.leftLine : current.rightLine;
+    const nextSourceLine = isLeftToRight ? next.leftLine : next.rightLine;
+
+    if (sourceLine >= currentSourceLine && sourceLine < nextSourceLine) {
+      prevAlign = current;
+      nextAlign = next;
+      break;
+    }
+  }
+
+  if (!prevAlign || !nextAlign) {
+    // Fallback: proportional scroll
+    const ratio = sourceScroll / Math.max(1, sourceHeight - 1);
+    return ratio * targetHeight;
+  }
+
+  // Interpolate within the segment
+  const prevSourceLine = isLeftToRight ? prevAlign.leftLine : prevAlign.rightLine;
+  const nextSourceLine = isLeftToRight ? nextAlign.leftLine : nextAlign.rightLine;
+  const prevTargetLine = isLeftToRight ? prevAlign.rightLine : prevAlign.leftLine;
+  const nextTargetLine = isLeftToRight ? nextAlign.rightLine : nextAlign.leftLine;
+
+  const segmentSourceLines = nextSourceLine - prevSourceLine;
+  const segmentTargetLines = nextTargetLine - prevTargetLine;
+
+  if (segmentSourceLines === 0) {
+    return prevTargetLine * lineHeight;
+  }
+
+  const positionInSegment = (sourceLine - prevSourceLine) / segmentSourceLines;
+  const targetLine = prevTargetLine + positionInSegment * segmentTargetLines;
+
+  return targetLine * lineHeight;
+}
+
+export function DiffViewer({ originalContent, modifiedContent, filename, language }: DiffViewerProps) {
+  const leftRef = useRef<HTMLDivElement>(null);
+  const rightRef = useRef<HTMLDivElement>(null);
+  const isScrollingRef = useRef<'left' | 'right' | null>(null);
+  const scrollTimeoutRef = useRef<number | null>(null);
+
+  const { leftLines, rightLines, alignments } = useMemo(
+    () => computeDiff(originalContent, modifiedContent, language),
+    [originalContent, modifiedContent, language]
+  );
+
+  // Stats
+  const stats = useMemo(() => {
+    const added = rightLines.filter(l => l.type === 'added').length;
+    const removed = leftLines.filter(l => l.type === 'removed').length;
+    return { added, removed };
+  }, [leftLines, rightLines]);
+
+  const LINE_HEIGHT = 20; // Must match CSS
+
+  // Intelligent scroll synchronization
+  const handleScroll = useCallback((source: 'left' | 'right') => {
+    const left = leftRef.current;
+    const right = rightRef.current;
+    if (!left || !right) return;
+
+    // Prevent feedback loops
+    if (isScrollingRef.current && isScrollingRef.current !== source) return;
+    isScrollingRef.current = source;
+
+    // Clear any pending timeout
+    if (scrollTimeoutRef.current) {
+      cancelAnimationFrame(scrollTimeoutRef.current);
+    }
+
+    const sourceEl = source === 'left' ? left : right;
+    const targetEl = source === 'left' ? right : left;
+
+    // Sync horizontal scroll directly
+    targetEl.scrollLeft = sourceEl.scrollLeft;
+
+    // Calculate intelligent vertical scroll position
+    const targetScroll = calculateTargetScroll(
+      sourceEl.scrollTop,
+      sourceEl.scrollHeight - sourceEl.clientHeight,
+      targetEl.scrollHeight - targetEl.clientHeight,
+      alignments,
+      LINE_HEIGHT,
+      source === 'left'
+    );
+
+    targetEl.scrollTop = targetScroll;
+
+    // Reset scroll lock after animation frame
+    scrollTimeoutRef.current = requestAnimationFrame(() => {
+      isScrollingRef.current = null;
+    });
+  }, [alignments]);
+
+  useEffect(() => {
+    const left = leftRef.current;
+    const right = rightRef.current;
+    if (!left || !right) return;
+
+    const leftHandler = () => handleScroll('left');
+    const rightHandler = () => handleScroll('right');
+
+    left.addEventListener('scroll', leftHandler);
+    right.addEventListener('scroll', rightHandler);
+
+    return () => {
+      left.removeEventListener('scroll', leftHandler);
+      right.removeEventListener('scroll', rightHandler);
+      if (scrollTimeoutRef.current) {
+        cancelAnimationFrame(scrollTimeoutRef.current);
+      }
+    };
+  }, [handleScroll]);
+
+  return (
+    <div className="diff-viewer">
+      <div className="diff-viewer-header">
+        <div className="diff-viewer-filename">{filename}</div>
+        <div className="diff-viewer-stats">
+          {stats.added > 0 && <span className="diff-stat added">+{stats.added}</span>}
+          {stats.removed > 0 && <span className="diff-stat removed">-{stats.removed}</span>}
+        </div>
+      </div>
+
+      <div className="diff-viewer-panels">
+        {/* Original (Left) */}
+        <div className="diff-panel diff-panel-original">
+          <div className="diff-panel-header">
+            <span className="diff-panel-label">Original (HEAD)</span>
+          </div>
+          <div className="diff-panel-content" ref={leftRef}>
+            {leftLines.map((line, idx) => (
+              <div key={idx} className={`diff-line diff-line-${line.type}`}>
+                <span className="diff-line-num">{line.num}</span>
+                <span
+                  className="diff-line-content"
+                  dangerouslySetInnerHTML={{ __html: line.highlighted || '&nbsp;' }}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Modified (Right) */}
+        <div className="diff-panel diff-panel-modified">
+          <div className="diff-panel-header">
+            <span className="diff-panel-label">Modified (Working)</span>
+          </div>
+          <div className="diff-panel-content" ref={rightRef}>
+            {rightLines.map((line, idx) => (
+              <div key={idx} className={`diff-line diff-line-${line.type}`}>
+                <span className="diff-line-num">{line.num}</span>
+                <span
+                  className="diff-line-content"
+                  dangerouslySetInnerHTML={{ __html: line.highlighted || '&nbsp;' }}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

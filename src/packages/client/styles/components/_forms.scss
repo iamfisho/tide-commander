@@ -1,0 +1,175 @@
+@use '../variables' as *;
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-label {
+  display: block;
+  font-size: 13px;
+  color: $text-secondary;
+  margin-bottom: 6px;
+}
+
+.form-input {
+  width: 100%;
+  padding: 10px 12px;
+  background: $bg-tertiary;
+  border: 1px solid $border-color;
+  border-radius: $radius-md;
+  color: $text-primary;
+  font-size: 14px;
+  outline: none;
+
+  &:focus {
+    border-color: $accent-blue;
+  }
+
+  &.error {
+    border-color: $accent-red;
+  }
+}
+
+// Command input section
+.command-section {
+  padding: 12px;
+  border-top: 1px solid $border-color;
+}
+
+.command-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.command-input {
+  flex: 1;
+  background: $bg-tertiary;
+  border: 1px solid $border-color;
+  border-radius: $radius-md;
+  padding: 10px 14px;
+  color: $text-primary;
+  font-size: 14px;
+  outline: none;
+
+  &:focus {
+    border-color: $accent-blue;
+  }
+
+  &::placeholder {
+    color: $text-secondary;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+.command-send {
+  padding: 10px 20px;
+  background: $accent-blue;
+  border: none;
+  border-radius: $radius-md;
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all $transition-fast;
+
+  &:hover {
+    filter: brightness(1.1);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+.quick-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.quick-action-btn {
+  padding: 6px 12px;
+  background: $bg-tertiary;
+  border: 1px solid $border-color;
+  border-radius: $radius-sm;
+  color: $text-primary;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all $transition-fast;
+
+  &:hover:not(:disabled) {
+    background: $border-color;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+// Toggle switch
+.toggle-switch {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  user-select: none;
+
+  &:hover .toggle-track {
+    border-color: $text-secondary;
+  }
+}
+
+.toggle-track {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  background: $bg-tertiary;
+  border: 2px solid $border-color;
+  border-radius: 12px;
+  transition: all $transition-fast;
+  flex-shrink: 0;
+}
+
+.toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: $text-secondary;
+  border-radius: 50%;
+  transition: all $transition-fast;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.toggle-input {
+  display: none;
+
+  &:checked + .toggle-track {
+    background: rgba($dracula-green, 0.2);
+    border-color: $dracula-green;
+
+    .toggle-thumb {
+      left: calc(100% - 18px);
+      background: $dracula-green;
+    }
+  }
+}
+
+.toggle-label {
+  font-size: 13px;
+  color: $text-secondary;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  .toggle-icon {
+    font-size: 16px;
+  }
+}

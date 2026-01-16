@@ -1,0 +1,487 @@
+@use '../variables' as *;
+
+.agent-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: $sidebar-width;
+  height: 72px;
+  background: linear-gradient(180deg, rgba($dracula-bg, 0.9) 0%, rgba($dracula-bg-darker, 0.95) 100%);
+  border-top: 1px solid $dracula-current;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 20px 0;
+  z-index: 100;
+  backdrop-filter: blur(8px);
+}
+
+.agent-bar-list {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+// New Agent spawn button
+.agent-bar-spawn-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: $radius-lg;
+  background: rgba($dracula-green, 0.15);
+  border: 2px dashed $dracula-green;
+  cursor: pointer;
+  transition: all $transition-fast;
+  padding: 4px;
+  margin-right: 4px;
+
+  &:hover {
+    background: rgba($dracula-green, 0.3);
+    border-style: solid;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba($dracula-green, 0.3);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+}
+
+.agent-bar-spawn-icon {
+  font-size: 20px;
+  font-weight: 600;
+  color: $dracula-green;
+  line-height: 1;
+}
+
+.agent-bar-spawn-label {
+  font-size: 8px;
+  font-family: $font-mono;
+  font-weight: 600;
+  color: $dracula-green;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-top: 2px;
+}
+
+// Agent group container with border
+.agent-bar-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px 6px;
+  border-radius: $radius-lg;
+  border: 2px solid;
+  position: relative;
+  background: rgba($dracula-bg, 0.3);
+  transition: all $transition-fast;
+  margin-top: 4px;
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  }
+
+  &.unassigned {
+    border-style: dashed;
+    border-color: $dracula-comment;
+    background: rgba($dracula-comment, 0.05);
+  }
+}
+
+// Area label positioned at top of group border
+.agent-bar-area-label {
+  position: absolute;
+  top: -10px;
+  left: 12px;
+  padding: 2px 8px;
+  border-radius: $radius-sm;
+  background: $dracula-bg;
+  z-index: 1;
+}
+
+.agent-bar-area-name {
+  font-size: 9px;
+  font-family: $font-mono;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.agent-bar-item {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: $radius-lg;
+  background: rgba($dracula-current, 0.5);
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all $transition-fast;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &:hover {
+    background: rgba($dracula-current, 0.8);
+    border-color: $dracula-comment;
+    transform: translateY(-2px);
+  }
+
+  &.selected {
+    border-color: $dracula-purple;
+    background: rgba($dracula-purple, 0.2);
+    box-shadow: 0 0 12px rgba($dracula-purple, 0.4);
+  }
+
+  // Status-based border colors and animations
+  &.working {
+    border-color: rgba($dracula-cyan, 0.8);
+    animation: agent-working-pulse 1.5s ease-in-out infinite;
+    box-shadow: 0 0 12px rgba($dracula-cyan, 0.4);
+
+    .agent-bar-icon {
+      animation: agent-icon-bounce 0.6s ease-in-out infinite;
+    }
+  }
+
+  &.error {
+    border-color: rgba($dracula-red, 0.8);
+    animation: agent-error-pulse 0.8s ease-in-out infinite;
+    box-shadow: 0 0 12px rgba($dracula-red, 0.4);
+  }
+
+  &.waiting {
+    border-color: rgba($dracula-orange, 0.8);
+    animation: agent-waiting-pulse 2s ease-in-out infinite;
+    box-shadow: 0 0 8px rgba($dracula-orange, 0.3);
+  }
+}
+
+@keyframes agent-working-pulse {
+  0%, 100% {
+    box-shadow: 0 0 8px rgba($dracula-cyan, 0.4);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba($dracula-cyan, 0.7), 0 0 30px rgba($dracula-cyan, 0.3);
+    transform: scale(1.05);
+  }
+}
+
+@keyframes agent-icon-bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes agent-error-pulse {
+  0%, 100% {
+    box-shadow: 0 0 8px rgba($dracula-red, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba($dracula-red, 0.8), 0 0 24px rgba($dracula-red, 0.4);
+  }
+}
+
+@keyframes agent-waiting-pulse {
+  0%, 100% {
+    box-shadow: 0 0 6px rgba($dracula-orange, 0.3);
+    border-color: rgba($dracula-orange, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 14px rgba($dracula-orange, 0.5);
+    border-color: rgba($dracula-orange, 0.9);
+  }
+}
+
+.agent-bar-avatar {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.agent-bar-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.agent-bar-status {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid $dracula-bg;
+  box-shadow: 0 0 4px currentColor;
+}
+
+.agent-bar-idle-clock {
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  font-size: 10px;
+  line-height: 1;
+  text-shadow: 0 0 4px currentColor;
+}
+
+.agent-bar-hotkey {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 16px;
+  height: 16px;
+  background: $dracula-comment;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 600;
+  font-family: $font-mono;
+  color: $dracula-bg;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity $transition-fast;
+
+  .agent-bar-item:hover & {
+    opacity: 1;
+  }
+}
+
+// Tooltip
+.agent-bar-tooltip {
+  position: absolute;
+  bottom: 85px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba($dracula-bg, 0.98);
+  border: 1px solid $dracula-purple;
+  border-radius: $radius-lg;
+  padding: 20px 24px;
+  min-width: 400px;
+  max-width: 550px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  z-index: 200;
+  animation: tooltip-appear 0.15s ease-out;
+
+  &::after {
+    content: '';
+    position: absolute;
+    bottom: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 8px solid transparent;
+    border-top-color: $dracula-purple;
+  }
+}
+
+@keyframes tooltip-appear {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.agent-bar-tooltip-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid $dracula-current;
+}
+
+.agent-bar-tooltip-icon {
+  font-size: 28px;
+}
+
+.agent-bar-tooltip-name {
+  font-weight: 600;
+  font-size: 18px;
+  color: $dracula-fg;
+  font-family: $font-mono;
+  flex: 1;
+}
+
+.agent-bar-tooltip-status {
+  font-size: 13px;
+  font-weight: 600;
+  font-family: $font-mono;
+  text-transform: uppercase;
+}
+
+.agent-bar-tooltip-info {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.agent-bar-tooltip-row {
+  display: flex;
+  gap: 12px;
+  font-size: 14px;
+  font-family: $font-mono;
+}
+
+.agent-bar-tooltip-label {
+  color: $dracula-comment;
+  min-width: 80px;
+  flex-shrink: 0;
+}
+
+.agent-bar-tooltip-value {
+  color: $dracula-fg;
+  flex: 1;
+}
+
+.agent-bar-tooltip-path {
+  color: $dracula-cyan;
+  word-break: break-all;
+  font-size: 13px;
+}
+
+.agent-bar-tooltip-queue {
+  color: $dracula-orange;
+}
+
+.agent-bar-tooltip-tool {
+  color: $dracula-pink;
+}
+
+// Tool bubble that appears above agent when using a tool
+.agent-bar-tool-bubble {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba($dracula-bg, 0.95);
+  border: 1px solid $dracula-pink;
+  border-radius: $radius-md;
+  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  margin-bottom: 8px;
+  animation: tool-bubble-appear 0.3s ease-out;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 8px rgba($dracula-pink, 0.3);
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 6px solid transparent;
+    border-top-color: $dracula-pink;
+  }
+}
+
+@keyframes tool-bubble-appear {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px) scale(0.8);
+  }
+  50% {
+    transform: translateX(-50%) translateY(-4px) scale(1.05);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
+.agent-bar-tool-icon {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.agent-bar-tool-name {
+  font-size: 10px;
+  font-family: $font-mono;
+  font-weight: 600;
+  color: $dracula-pink;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+// Last query preview below agent
+.agent-bar-last-query {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba($dracula-bg, 0.95);
+  border: 1px solid $dracula-comment;
+  border-radius: $radius-sm;
+  padding: 3px 8px;
+  font-size: 9px;
+  font-family: $font-mono;
+  color: $dracula-comment;
+  white-space: nowrap;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 4px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity $transition-fast;
+
+  .agent-bar-item:hover & {
+    opacity: 1;
+  }
+}
+
+// Tooltip area style
+.agent-bar-tooltip-area {
+  font-weight: 600;
+}
+
+// Tooltip query style
+.agent-bar-tooltip-query {
+  color: $dracula-green;
+  font-style: italic;
+  font-size: 13px;
+  word-break: break-word;
+  line-height: 1.4;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+// Divider for supervisor section
+.agent-bar-tooltip-divider {
+  height: 1px;
+  background: $dracula-current;
+  margin: 8px 0;
+}
+
+// Supervisor analysis styles
+.agent-bar-tooltip-supervisor {
+  color: $dracula-cyan;
+  font-size: 13px;
+  word-break: break-word;
+  line-height: 1.4;
+}
+
+// Concerns shown in warning color
+.agent-bar-tooltip-concerns {
+  color: $dracula-orange;
+  font-size: 12px;
+  font-style: italic;
+  word-break: break-word;
+  line-height: 1.3;
+}

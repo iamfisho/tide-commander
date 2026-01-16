@@ -1,0 +1,438 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { useStore, store } from '../store';
+import type { Agent, DrawingArea, AgentSupervisorHistoryEntry } from '../../shared/types';
+import { AGENT_CLASS_CONFIG } from '../scene/config';
+import { formatIdleTime, getIdleTimerColor } from '../utils/formatting';
+
+// Tool icons mapping
+const TOOL_ICONS: Record<string, string> = {
+  Read: '📖',
+  Write: '✏️',
+  Edit: '📝',
+  Bash: '💻',
+  Glob: '🔍',
+  Grep: '🔎',
+  Task: '📋',
+  WebFetch: '🌐',
+  WebSearch: '🔍',
+  TodoWrite: '✅',
+  NotebookEdit: '📓',
+  default: '⚡',
+};
+
+interface AgentBarProps {
+  onFocusAgent?: (agentId: string) => void;
+  onSpawnClick?: () => void;
+}
+
+interface AgentGroup {
+  area: DrawingArea | null;
+  agents: Agent[];
+}
+
+export function AgentBar({ onFocusAgent, onSpawnClick }: AgentBarProps) {
+  const state = useStore();
+  const [hoveredAgent, setHoveredAgent] = useState<Agent | null>(null);
+  // Track tool bubbles with animation state
+  const [toolBubbles, setToolBubbles] = useState<Map<string, { tool: string; key: number }>>(new Map());
+
+  const agents = Array.from(state.agents.values()).sort(
+    (a, b) => (a.createdAt || 0) - (b.createdAt || 0)
+  );
+
+  // Group agents by their area
+  const agentGroups = useMemo(() => {
+    const groups = new Map<string | null, AgentGroup>();
+
+    for (const agent of agents) {
+      const area = store.getAreaForAgent(agent.id);
+      const areaKey = area?.id || null;
+
+      if (!groups.has(areaKey)) {
+        groups.set(areaKey, { area, agents: [] });
+      }
+      groups.get(areaKey)!.agents.push(agent);
+    }
+
+    // Convert to array and sort: areas first (alphabetically), then unassigned
+    const groupArray = Array.from(groups.values());
+    groupArray.sort((a, b) => {
+      if (!a.area && b.area) return 1;
+      if (a.area && !b.area) return -1;
+      if (!a.area && !b.area) return 0;
+      return (a.area?.name || '').localeCompare(b.area?.name || '');
+    });
+
+    return groupArray;
+  }, [agents, state.areas]);
+
+  // Watch for tool changes on agents
+  useEffect(() => {
+    const newBubbles = new Map(toolBubbles);
+    let changed = false;
+
+    for (const agent of agents) {
+      const currentBubble = toolBubbles.get(agent.id);
+
+      if (agent.currentTool) {
+        // Agent has a tool active
+        if (!currentBubble || currentBubble.tool !== agent.currentTool) {
+          // New tool or different tool - create/update bubble with new key for animation
+          newBubbles.set(agent.id, {
+            tool: agent.currentTool,
+            key: Date.now()
+          });
+          changed = true;
+        }
+      } else if (currentBubble) {
+        // Tool finished - remove bubble after a short delay
+        // Keep it for a moment so user sees it
+        setTimeout(() => {
+          setToolBubbles(prev => {
+            const updated = new Map(prev);
+            updated.delete(agent.id);
+            return updated;
+          });
+        }, 1500);
+      }
+    }
+
+    if (changed) {
+      setToolBubbles(newBubbles);
+    }
+  }, [agents.map(a => a.currentTool).join(',')]);
+
+  const handleAgentClick = (agent: Agent, e: React.MouseEvent) => {
+    if (e.shiftKey) {
+      // Shift+click to add/remove from selection
+      store.addToSelection(agent.id);
+    } else {
+      // Normal click to select only this agent
+      store.selectAgent(agent.id);
+    }
+  };
+
+  const handleAgentDoubleClick = (agent: Agent) => {
+    // Double-click to focus camera on agent
+    onFocusAgent?.(agent.id);
+  };
+
+  const getStatusColor = (status: Agent['status']) => {
+    switch (status) {
+      case 'idle': return '#4aff9e';
+      case 'working': return '#4a9eff';
+      case 'waiting': return '#ff9e4a';
+      case 'error': return '#ff4a4a';
+      case 'offline': return '#888888';
+      default: return '#888888';
+    }
+  };
+
+  const getStatusLabel = (status: Agent['status']) => {
+    switch (status) {
+      case 'idle': return 'Idle';
+      case 'working': return 'Working';
+      case 'waiting': return 'Waiting';
+      case 'error': return 'Error';
+      case 'offline': return 'Offline';
+      default: return 'Unknown';
+    }
+  };
+
+  // Calculate global index for hotkeys
+  let globalIndex = 0;
+
+  return (
+    <div className="agent-bar">
+      <div className="agent-bar-list">
+        {/* New Agent button */}
+        <button
+          className="agent-bar-spawn-btn"
+          onClick={onSpawnClick}
+          title="Spawn New Agent (Alt+N)"
+        >
+          <span className="agent-bar-spawn-icon">+</span>
+          <span className="agent-bar-spawn-label">New Agent</span>
+        </button>
+        {agentGroups.map((group) => {
+          const groupAgents = group.agents;
+          const isUnassigned = !group.area;
+
+          return (
+            <div
+              key={group.area?.id || 'unassigned'}
+              className={`agent-bar-group ${isUnassigned ? 'unassigned' : ''}`}
+              style={{
+                borderColor: group.area?.color || undefined,
+                background: group.area
+                  ? `${group.area.color}15`
+                  : undefined,
+              }}
+            >
+              {/* Area label at top of group border */}
+              <div className="agent-bar-area-label">
+                <span
+                  className="agent-bar-area-name"
+                  style={{ color: group.area?.color || '#888' }}
+                >
+                  {group.area?.name || 'Unassigned'}
+                </span>
+              </div>
+
+              {/* Agents in this group */}
+              {groupAgents.map((agent) => {
+                const currentIndex = globalIndex++;
+                const isSelected = state.selectedAgentIds.has(agent.id);
+                const config = AGENT_CLASS_CONFIG[agent.class];
+                const lastPrompt = state.lastPrompts.get(agent.id);
+
+                const toolBubble = toolBubbles.get(agent.id);
+                const toolIcon = toolBubble
+                  ? TOOL_ICONS[toolBubble.tool] || TOOL_ICONS.default
+                  : null;
+
+                // Truncate last query for display
+                const lastQueryShort = lastPrompt?.text
+                  ? lastPrompt.text.length > 30
+                    ? lastPrompt.text.substring(0, 30) + '...'
+                    : lastPrompt.text
+                  : null;
+
+                return (
+                  <div
+                    key={agent.id}
+                    className={`agent-bar-item ${isSelected ? 'selected' : ''} ${agent.status}`}
+                    onClick={(e) => handleAgentClick(agent, e)}
+                    onDoubleClick={() => handleAgentDoubleClick(agent)}
+                    onMouseEnter={() => setHoveredAgent(agent)}
+                    onMouseLeave={() => setHoveredAgent(null)}
+                    title={`${agent.name} (${currentIndex + 1})`}
+                  >
+                    <div className="agent-bar-avatar">
+                      <span className="agent-bar-icon">{config.icon}</span>
+                      <span
+                        className="agent-bar-status"
+                        style={{ backgroundColor: getStatusColor(agent.status) }}
+                      />
+                      {agent.status === 'idle' && agent.lastActivity > 0 && (
+                        <span
+                          className="agent-bar-idle-clock"
+                          style={{ color: getIdleTimerColor(agent.lastActivity) }}
+                          title={formatIdleTime(agent.lastActivity)}
+                        >
+                          ⏱
+                        </span>
+                      )}
+                    </div>
+                    <span className="agent-bar-hotkey" title={`Ctrl+${currentIndex + 1}`}>^{currentIndex + 1}</span>
+                    {toolBubble && (
+                      <div
+                        key={toolBubble.key}
+                        className="agent-bar-tool-bubble"
+                        title={toolBubble.tool}
+                      >
+                        <span className="agent-bar-tool-icon">{toolIcon}</span>
+                        <span className="agent-bar-tool-name">{toolBubble.tool}</span>
+                      </div>
+                    )}
+                    {/* Last query preview */}
+                    {lastQueryShort && !toolBubble && (
+                      <div className="agent-bar-last-query" title={lastPrompt?.text}>
+                        {lastQueryShort}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Hover tooltip */}
+      {hoveredAgent && (() => {
+        const hoveredArea = store.getAreaForAgent(hoveredAgent.id);
+        const hoveredLastPrompt = state.lastPrompts.get(hoveredAgent.id);
+        const config = AGENT_CLASS_CONFIG[hoveredAgent.class];
+
+        // Get last supervisor analysis for this agent
+        const supervisorHistory = store.getAgentSupervisorHistory(hoveredAgent.id);
+        const lastSupervisorEntry: AgentSupervisorHistoryEntry | undefined =
+          supervisorHistory.length > 0 ? supervisorHistory[supervisorHistory.length - 1] : undefined;
+
+        // Format uptime
+        const uptimeMs = Date.now() - (hoveredAgent.createdAt || Date.now());
+        const uptimeMinutes = Math.floor(uptimeMs / 60000);
+        const uptimeHours = Math.floor(uptimeMinutes / 60);
+        const uptimeStr = uptimeHours > 0
+          ? `${uptimeHours}h ${uptimeMinutes % 60}m`
+          : `${uptimeMinutes}m`;
+
+        // Format tokens
+        const formatTokens = (n: number) => {
+          if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+          if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+          return n.toString();
+        };
+
+        // Context usage percentage
+        const contextPercent = hoveredAgent.contextLimit > 0
+          ? Math.round((hoveredAgent.contextUsed / hoveredAgent.contextLimit) * 100)
+          : 0;
+
+        // Get progress color for supervisor status
+        const getProgressColor = (progress: string) => {
+          switch (progress) {
+            case 'on_track': return '#4aff9e';
+            case 'completed': return '#4a9eff';
+            case 'stalled': return '#ff9e4a';
+            case 'blocked': return '#ff4a4a';
+            case 'idle': return '#888888';
+            default: return '#888888';
+          }
+        };
+
+        return (
+          <div className="agent-bar-tooltip">
+            <div className="agent-bar-tooltip-header">
+              <span className="agent-bar-tooltip-icon">
+                {config.icon}
+              </span>
+              <span className="agent-bar-tooltip-name">{hoveredAgent.name}</span>
+              <span
+                className="agent-bar-tooltip-status"
+                style={{ color: getStatusColor(hoveredAgent.status) }}
+              >
+                {getStatusLabel(hoveredAgent.status)}
+              </span>
+            </div>
+            <div className="agent-bar-tooltip-info">
+              <div className="agent-bar-tooltip-row">
+                <span className="agent-bar-tooltip-label">Class:</span>
+                <span className="agent-bar-tooltip-value">
+                  {hoveredAgent.class} — {config.description}
+                </span>
+              </div>
+              {hoveredArea && (
+                <div className="agent-bar-tooltip-row">
+                  <span className="agent-bar-tooltip-label">Area:</span>
+                  <span
+                    className="agent-bar-tooltip-value agent-bar-tooltip-area"
+                    style={{ color: hoveredArea.color }}
+                  >
+                    {hoveredArea.name}
+                  </span>
+                </div>
+              )}
+              <div className="agent-bar-tooltip-row">
+                <span className="agent-bar-tooltip-label">Directory:</span>
+                <span className="agent-bar-tooltip-value agent-bar-tooltip-path">
+                  {hoveredAgent.cwd}
+                </span>
+              </div>
+              <div className="agent-bar-tooltip-row">
+                <span className="agent-bar-tooltip-label">Uptime:</span>
+                <span className="agent-bar-tooltip-value">{uptimeStr}</span>
+              </div>
+              <div className="agent-bar-tooltip-row">
+                <span className="agent-bar-tooltip-label">Tokens:</span>
+                <span className="agent-bar-tooltip-value">
+                  {formatTokens(hoveredAgent.tokensUsed)} used
+                </span>
+              </div>
+              <div className="agent-bar-tooltip-row">
+                <span className="agent-bar-tooltip-label">Context:</span>
+                <span className="agent-bar-tooltip-value" style={{
+                  color: contextPercent > 80 ? '#ff4a4a' : contextPercent > 60 ? '#ff9e4a' : undefined
+                }}>
+                  {formatTokens(hoveredAgent.contextUsed)} / {formatTokens(hoveredAgent.contextLimit)} ({contextPercent}%)
+                </span>
+              </div>
+              {hoveredAgent.currentTool && (
+                <div className="agent-bar-tooltip-row">
+                  <span className="agent-bar-tooltip-label">Tool:</span>
+                  <span className="agent-bar-tooltip-value agent-bar-tooltip-tool">
+                    {TOOL_ICONS[hoveredAgent.currentTool] || TOOL_ICONS.default} {hoveredAgent.currentTool}
+                  </span>
+                </div>
+              )}
+              {hoveredAgent.currentTask && (
+                <div className="agent-bar-tooltip-row">
+                  <span className="agent-bar-tooltip-label">Task:</span>
+                  <span className="agent-bar-tooltip-value">
+                    {hoveredAgent.currentTask.substring(0, 150)}
+                    {hoveredAgent.currentTask.length > 150 ? '...' : ''}
+                  </span>
+                </div>
+              )}
+              {hoveredAgent.lastAssignedTask && !hoveredAgent.currentTask && (
+                <div className="agent-bar-tooltip-row">
+                  <span className="agent-bar-tooltip-label">Assigned Task:</span>
+                  <span className="agent-bar-tooltip-value agent-bar-tooltip-query">
+                    {hoveredAgent.lastAssignedTask.substring(0, 200)}
+                    {hoveredAgent.lastAssignedTask.length > 200 ? '...' : ''}
+                  </span>
+                </div>
+              )}
+              {(hoveredAgent.pendingCommands?.length || 0) > 0 && (
+                <div className="agent-bar-tooltip-row">
+                  <span className="agent-bar-tooltip-label">Queued:</span>
+                  <span className="agent-bar-tooltip-value agent-bar-tooltip-queue">
+                    {hoveredAgent.pendingCommands.length} command(s)
+                  </span>
+                </div>
+              )}
+              {hoveredLastPrompt && (
+                <div className="agent-bar-tooltip-row">
+                  <span className="agent-bar-tooltip-label">Last Query:</span>
+                  <span className="agent-bar-tooltip-value agent-bar-tooltip-query">
+                    {hoveredLastPrompt.text.substring(0, 300)}
+                    {hoveredLastPrompt.text.length > 300 ? '...' : ''}
+                  </span>
+                </div>
+              )}
+              {/* Supervisor Analysis Section */}
+              {lastSupervisorEntry && (
+                <>
+                  <div className="agent-bar-tooltip-divider" />
+                  <div className="agent-bar-tooltip-row">
+                    <span className="agent-bar-tooltip-label">Supervisor:</span>
+                    <span
+                      className="agent-bar-tooltip-value"
+                      style={{ color: getProgressColor(lastSupervisorEntry.analysis.progress) }}
+                    >
+                      {lastSupervisorEntry.analysis.progress.replace('_', ' ')}
+                    </span>
+                  </div>
+                  <div className="agent-bar-tooltip-row">
+                    <span className="agent-bar-tooltip-label">Status:</span>
+                    <span className="agent-bar-tooltip-value agent-bar-tooltip-supervisor">
+                      {lastSupervisorEntry.analysis.statusDescription}
+                    </span>
+                  </div>
+                  {lastSupervisorEntry.analysis.recentWorkSummary && (
+                    <div className="agent-bar-tooltip-row">
+                      <span className="agent-bar-tooltip-label">Summary:</span>
+                      <span className="agent-bar-tooltip-value agent-bar-tooltip-supervisor">
+                        {lastSupervisorEntry.analysis.recentWorkSummary.substring(0, 300)}
+                        {lastSupervisorEntry.analysis.recentWorkSummary.length > 300 ? '...' : ''}
+                      </span>
+                    </div>
+                  )}
+                  {lastSupervisorEntry.analysis.concerns && lastSupervisorEntry.analysis.concerns.length > 0 && (
+                    <div className="agent-bar-tooltip-row">
+                      <span className="agent-bar-tooltip-label">Concerns:</span>
+                      <span className="agent-bar-tooltip-value agent-bar-tooltip-concerns">
+                        {lastSupervisorEntry.analysis.concerns.join('; ')}
+                      </span>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+    </div>
+  );
+}

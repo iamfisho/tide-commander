@@ -1,0 +1,189 @@
+@use '../variables' as *;
+
+.markdown-content {
+  line-height: 1.5;
+  display: block;
+  color: $dracula-fg;
+
+  p {
+    margin: 0.4em 0;
+
+    &:first-child {
+      margin-top: 0;
+    }
+
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    margin: 0.6em 0 0.3em 0;
+    font-weight: 600;
+    color: $dracula-fg;
+    line-height: 1.3;
+  }
+
+  h1 { font-size: 1.4em; color: $dracula-pink; }
+  h2 { font-size: 1.25em; color: $dracula-purple; }
+  h3 { font-size: 1.15em; color: $dracula-cyan; }
+  h4 { font-size: 1.1em; color: $dracula-green; }
+  h5 { font-size: 1.05em; color: $dracula-yellow; }
+  h6 { font-size: 1em; color: $dracula-orange; }
+
+  code {
+    background: rgba($dracula-current, 0.6);
+    color: $dracula-green;
+    padding: 0.15em 0.4em;
+    border-radius: 3px;
+    font-family: $font-mono;
+    font-size: 0.9em;
+  }
+
+  pre {
+    background: rgba($dracula-bg, 0.9);
+    border: 1px solid rgba($dracula-comment, 0.4);
+    border-radius: $radius-md;
+    padding: 12px;
+    margin: 0.6em 0;
+    overflow-x: auto;
+
+    code {
+      background: none;
+      padding: 0;
+      color: $dracula-fg;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+  }
+
+  ul, ol {
+    margin: 0.5em 0;
+    padding-left: 1.5em;
+    line-height: 1.5;
+  }
+
+  li {
+    margin: 0.2em 0;
+    padding-left: 0.3em;
+
+    &::marker {
+      color: $dracula-purple;
+    }
+  }
+
+  // Nested lists
+  ul ul, ul ol, ol ul, ol ol {
+    margin: 0.2em 0;
+  }
+
+  // Checklist style
+  input[type="checkbox"] {
+    margin-right: 0.5em;
+    accent-color: $dracula-green;
+  }
+
+  blockquote {
+    border-left: 3px solid $dracula-purple;
+    margin: 0.5em 0;
+    padding: 0.5em 1em;
+    background: rgba($dracula-purple, 0.1);
+    color: $dracula-fg;
+    border-radius: 0 $radius-sm $radius-sm 0;
+
+    p {
+      margin: 0;
+    }
+
+    // Nested blockquotes
+    blockquote {
+      margin-top: 0.5em;
+      border-left-color: $dracula-pink;
+      background: rgba($dracula-pink, 0.1);
+    }
+  }
+
+  a {
+    color: $dracula-cyan;
+    text-decoration: underline;
+    text-decoration-color: rgba($dracula-cyan, 0.4);
+    text-underline-offset: 2px;
+    transition: all $transition-fast;
+
+    &:hover {
+      color: $dracula-pink;
+      text-decoration-color: $dracula-pink;
+    }
+
+    &:visited {
+      color: $dracula-purple;
+      text-decoration-color: rgba($dracula-purple, 0.4);
+    }
+  }
+
+  strong {
+    color: $dracula-orange;
+    font-weight: 600;
+  }
+
+  em {
+    color: $dracula-yellow;
+    font-style: italic;
+  }
+
+  del {
+    color: $dracula-red;
+    text-decoration: line-through;
+  }
+
+  hr {
+    border: none;
+    border-top: 1px solid rgba($dracula-comment, 0.5);
+    margin: 1em 0;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0.6em 0;
+    font-size: 12px;
+  }
+
+  th, td {
+    border: 1px solid rgba($dracula-comment, 0.4);
+    padding: 6px 10px;
+    text-align: left;
+  }
+
+  th {
+    background: rgba($dracula-current, 0.8);
+    font-weight: 600;
+    color: $dracula-pink;
+  }
+
+  td {
+    background: rgba($dracula-bg, 0.5);
+  }
+
+  tr:nth-child(even) td {
+    background: rgba($dracula-current, 0.4);
+  }
+
+  // Center-aligned table cells
+  td[align="center"],
+  th[align="center"] {
+    text-align: center;
+  }
+
+  td[align="right"],
+  th[align="right"] {
+    text-align: right;
+  }
+
+  // Images
+  img {
+    max-width: 100%;
+    border-radius: $radius-sm;
+    margin: 0.5em 0;
+  }
+}

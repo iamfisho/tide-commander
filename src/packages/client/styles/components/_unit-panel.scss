@@ -1,0 +1,942 @@
+@use '../variables' as *;
+
+.unit-section {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.unit-panel {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.unit-model-preview {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: $radius-md;
+  overflow: hidden;
+  padding: 4px;
+}
+
+.unit-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.unit-header-actions {
+  display: flex;
+  flex-direction: row;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.unit-action-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: $radius-sm;
+  border: 1px solid $border-color;
+  background: rgba($bg-tertiary, 0.8);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  transition: all $transition-fast;
+  padding: 0;
+
+  &:hover {
+    background: rgba($accent-blue, 0.2);
+    border-color: $accent-blue;
+    transform: scale(1.1);
+  }
+
+  &.danger:hover {
+    background: rgba($accent-red, 0.2);
+    border-color: $accent-red;
+  }
+}
+
+.unit-header-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.unit-class-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: $radius-md;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+}
+
+.unit-name {
+  font-weight: 600;
+  font-size: 15px;
+
+  &.unit-name-editable {
+    cursor: pointer;
+    padding: 2px 4px;
+    margin: -2px -4px;
+    border-radius: $radius-sm;
+    transition: background $transition-fast;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+  }
+}
+
+.unit-name-input {
+  font-weight: 600;
+  font-size: 15px;
+  font-family: inherit;
+  background: $bg-tertiary;
+  border: 1px solid $accent-blue;
+  border-radius: $radius-sm;
+  color: $text-primary;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  width: calc(100% + 8px);
+  outline: none;
+
+  &:focus {
+    border-color: $accent-blue;
+    box-shadow: 0 0 0 2px rgba($accent-blue, 0.2);
+  }
+}
+
+.unit-status {
+  font-size: 12px;
+  color: $text-secondary;
+}
+
+.unit-idle-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  margin-top: 4px;
+  font-size: 11px;
+  font-family: $font-mono;
+  color: $dracula-comment;
+  background: rgba($dracula-comment, 0.15);
+  border-radius: $radius-sm;
+  border: 1px solid rgba($dracula-comment, 0.2);
+}
+
+.unit-area {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: $bg-tertiary;
+  border-radius: $radius-sm;
+  margin-bottom: 8px;
+  font-size: 11px;
+}
+
+.unit-area-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.unit-area-name {
+  color: $text-secondary;
+}
+
+.unit-directories {
+  padding: 8px;
+  background: $bg-tertiary;
+  border-radius: $radius-md;
+  margin-bottom: 8px;
+}
+
+.unit-directories-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.unit-directory-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  background: rgba($dracula-current, 0.3);
+  border-radius: $radius-sm;
+  font-size: 11px;
+  color: $text-primary;
+  cursor: default;
+  transition: all $transition-fast;
+
+  &:hover {
+    background: rgba($dracula-current, 0.5);
+  }
+
+  &.clickable {
+    cursor: pointer;
+
+    &:hover {
+      background: rgba($dracula-green, 0.2);
+      border-left: 2px solid $dracula-green;
+      padding-left: 4px;
+    }
+  }
+}
+
+.unit-directory-icon {
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.unit-directory-path {
+  font-family: $font-mono;
+  font-size: 11px;
+  color: $dracula-green;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.unit-last-prompt {
+  padding: 8px;
+  background: $bg-tertiary;
+  border-radius: $radius-md;
+  margin-bottom: 8px;
+  border-left: 2px solid $dracula-cyan;
+}
+
+.unit-last-prompt-text {
+  font-size: 11px;
+  font-family: $font-mono;
+  color: $dracula-cyan;
+  line-height: 1.4;
+  word-break: break-word;
+  white-space: pre-wrap;
+  max-height: 60px;
+  overflow-y: auto;
+  opacity: 0.9;
+
+  &::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: $border-color;
+    border-radius: 2px;
+  }
+}
+
+.unit-last-message {
+  padding: 8px;
+  background: $bg-tertiary;
+  border-radius: $radius-md;
+  margin-bottom: 8px;
+  border-left: 2px solid $dracula-purple;
+}
+
+.unit-last-message-text {
+  font-size: 11px;
+  font-family: $font-mono;
+  color: $text-primary;
+  line-height: 1.4;
+  word-break: break-word;
+  white-space: pre-wrap;
+  max-height: 80px;
+  overflow-y: auto;
+  opacity: 0.9;
+
+  &::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: $border-color;
+    border-radius: 2px;
+  }
+}
+
+.unit-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.unit-stat {
+  background: $bg-tertiary;
+  padding: 8px;
+  border-radius: $radius-md;
+}
+
+.unit-stat-label {
+  font-size: 10px;
+  color: $text-secondary;
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+
+.unit-stat-value {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.unit-context {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  background: $bg-tertiary;
+  border-radius: $radius-md;
+}
+
+.unit-context-bar {
+  flex: 1;
+  height: 6px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.unit-context-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width $transition-slow, background $transition-slow;
+}
+
+.unit-context-value {
+  font-size: 11px;
+  font-weight: 600;
+  min-width: 32px;
+  text-align: right;
+}
+
+.unit-current-tool {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: rgba($accent-blue, 0.1);
+  border: 1px solid rgba($accent-blue, 0.3);
+  border-radius: $radius-sm;
+  margin-bottom: 8px;
+}
+
+.unit-tool-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: $accent-blue;
+}
+
+.unit-task {
+  padding: 8px;
+  background: $bg-tertiary;
+  border-radius: $radius-md;
+  margin-bottom: 8px;
+}
+
+.unit-task-text {
+  font-size: 11px;
+  color: $text-primary;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.unit-cwd {
+  padding: 8px;
+  background: $bg-tertiary;
+  border-radius: $radius-md;
+  margin-bottom: 12px;
+}
+
+.unit-cwd-path {
+  font-size: 10px;
+  font-family: $font-mono;
+  color: $text-secondary;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.unit-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.unit-action-btn {
+  flex: 1;
+  padding: 8px;
+  border: 1px solid $border-color;
+  background: $bg-tertiary;
+  color: $text-primary;
+  border-radius: $radius-md;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all $transition-fast;
+
+  &:hover {
+    background: $border-color;
+  }
+
+  &.danger:hover {
+    background: $accent-red;
+    border-color: $accent-red;
+  }
+}
+
+// Agent status dots
+.agent-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+
+  &.idle { background: $accent-green; }
+  &.working { background: $accent-blue; }
+  &.waiting { background: $accent-orange; }
+  &.error { background: $accent-red; }
+  &.offline { background: $text-secondary; }
+}
+
+// Agents list view
+.agents-list {
+  padding: 6px;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.agents-list-header {
+  font-weight: 600;
+  font-size: 11px;
+  color: $text-secondary;
+  margin-bottom: 4px;
+  padding: 0 2px;
+}
+
+.agent-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  background: $bg-tertiary;
+  border-radius: $radius-sm;
+  margin-bottom: 3px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all $transition-fast;
+
+  &:hover {
+    border-color: $border-color;
+  }
+
+  &.selected {
+    border-color: $accent-blue;
+  }
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.agent-item-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: $radius-sm;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.agent-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.agent-item-name {
+  font-weight: 600;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agent-item-status {
+  font-size: 9px;
+  color: $text-secondary;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agent-item-idle {
+  font-family: $font-mono;
+  font-weight: 600;
+  font-size: 9px;
+  text-shadow: 0 0 3px currentColor;
+}
+
+// Agents grouped by area
+.agents-group {
+  margin-bottom: 4px;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.agents-group-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: $text-secondary;
+  border-left: 2px solid $border-color;
+  background: $bg-tertiary;
+  border-radius: 0 $radius-sm $radius-sm 0;
+  margin-bottom: 2px;
+}
+
+.agents-group-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.agents-group-name {
+  flex: 1;
+
+  &.unassigned {
+    color: $text-muted;
+    font-style: italic;
+  }
+}
+
+.agents-group-count {
+  font-size: 8px;
+  padding: 1px 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: $radius-sm;
+  color: $text-muted;
+}
+
+.agents-group-items {
+  border-radius: $radius-sm;
+  padding: 2px;
+}
+
+// Empty state
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  text-align: center;
+  color: $text-secondary;
+}
+
+.empty-state-icon {
+  font-size: 32px;
+  margin-bottom: 10px;
+  opacity: 0.5;
+}
+
+.empty-state-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: $text-primary;
+}
+
+.empty-state-desc {
+  font-size: 11px;
+}
+
+// Settings section
+.settings-section {
+  margin-top: 12px;
+  border-top: 1px solid $border-color;
+  padding-top: 8px;
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+  border-radius: $radius-sm;
+  transition: background $transition-fast;
+
+  &:hover {
+    background: $bg-tertiary;
+  }
+}
+
+.settings-icon {
+  font-size: 14px;
+}
+
+.settings-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: $text-secondary;
+  flex: 1;
+}
+
+.settings-chevron {
+  font-size: 8px;
+  color: $text-secondary;
+  transition: transform $transition-fast;
+
+  &.expanded {
+    transform: rotate(90deg);
+  }
+}
+
+.settings-content {
+  padding: 8px;
+  background: $bg-tertiary;
+  border-radius: $radius-sm;
+  margin-top: 4px;
+}
+
+.settings-item {
+  margin-bottom: 12px;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.settings-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: $text-primary;
+  margin-bottom: 4px;
+}
+
+.settings-input-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-input {
+  width: 80px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-family: $font-mono;
+  background: $bg-primary;
+  border: 1px solid $border-color;
+  border-radius: $radius-sm;
+  color: $text-primary;
+
+  &:focus {
+    outline: none;
+    border-color: $dracula-purple;
+  }
+}
+
+.settings-hint {
+  font-size: 10px;
+  color: $text-secondary;
+}
+
+.settings-description {
+  font-size: 10px;
+  color: $text-secondary;
+  margin-top: 4px;
+}
+
+// Supervisor History Section
+.unit-supervisor-history {
+  margin-bottom: 12px;
+  background: $bg-tertiary;
+  border-radius: $radius-md;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.unit-supervisor-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px;
+  cursor: pointer;
+  transition: background $transition-fast;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .unit-stat-label {
+    margin-bottom: 0;
+  }
+}
+
+.unit-supervisor-history-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: $text-secondary;
+}
+
+.unit-supervisor-history-count {
+  background: rgba($dracula-purple, 0.3);
+  color: $dracula-purple;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.unit-supervisor-history-list {
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  flex: 1;
+  overflow-y: auto;
+
+  &::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: $border-color;
+    border-radius: 2px;
+  }
+}
+
+.unit-supervisor-history-loading,
+.unit-supervisor-history-empty {
+  padding: 12px 8px;
+  text-align: center;
+  font-size: 11px;
+  color: $text-secondary;
+}
+
+.supervisor-history-item {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.supervisor-history-item-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px;
+  cursor: pointer;
+  transition: background $transition-fast;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.03);
+  }
+}
+
+.supervisor-history-progress-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+.supervisor-history-status {
+  flex: 1;
+  font-size: 13px;
+  color: $text-primary;
+  line-height: 1.4;
+}
+
+.supervisor-history-time {
+  font-size: 11px;
+  color: $text-secondary;
+  flex-shrink: 0;
+}
+
+.supervisor-history-item-details {
+  padding: 0 8px 8px 24px;
+  border-left: 2px solid rgba($dracula-purple, 0.3);
+  margin-left: 4px;
+}
+
+.supervisor-history-summary {
+  font-size: 12px;
+  color: $text-secondary;
+  line-height: 1.5;
+  margin-bottom: 6px;
+
+  strong {
+    color: $text-primary;
+    font-weight: 600;
+  }
+}
+
+.supervisor-history-concerns {
+  font-size: 12px;
+  color: $dracula-orange;
+
+  strong {
+    color: $dracula-orange;
+    font-weight: 600;
+  }
+
+  ul {
+    margin: 4px 0 0 0;
+    padding-left: 16px;
+
+    li {
+      margin-bottom: 2px;
+      color: $text-secondary;
+    }
+  }
+}
+
+// Global Supervisor Status (shown when no agent is selected)
+.global-supervisor-status {
+  margin-top: 12px;
+  background: $bg-tertiary;
+  border-radius: $radius-md;
+  overflow: hidden;
+}
+
+.global-supervisor-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: background $transition-fast;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.05);
+  }
+}
+
+.global-supervisor-toggle {
+  font-size: 8px;
+  color: $text-muted;
+}
+
+.global-supervisor-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: $dracula-purple;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.global-supervisor-time {
+  margin-left: auto;
+  font-size: 10px;
+  color: $text-secondary;
+}
+
+.global-supervisor-list {
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.global-supervisor-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: background $transition-fast;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  &:not(:last-child) {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  }
+}
+
+.global-supervisor-item-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.global-supervisor-progress-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.global-supervisor-agent-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.global-supervisor-agent-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: $text-primary;
+  flex: 1;
+  min-width: 0;
+}
+
+.global-supervisor-item-time {
+  font-size: 10px;
+  color: $text-muted;
+  flex-shrink: 0;
+}
+
+.global-supervisor-status-line {
+  font-size: 12px;
+  color: $text-secondary;
+  line-height: 1.4;
+  padding-left: 18px;
+  margin-top: 2px;
+}
+
+.global-supervisor-summary-text {
+  font-size: 13px;
+  color: $text-primary;
+  line-height: 1.4;
+  padding-left: 18px;
+  margin-top: 4px;
+}

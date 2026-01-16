@@ -1,0 +1,243 @@
+import * as THREE from 'three';
+import { MOVE_SPEED } from '../config';
+import type { AgentMeshData } from '../characters/CharacterFactory';
+
+/**
+ * Movement animation state.
+ */
+interface MovementState {
+  agentId: string;
+  startPos: THREE.Vector3;
+  endPos: THREE.Vector3;
+  startTime: number;
+  duration: number;
+}
+
+/**
+ * Available animation names from Kenney Mini Characters.
+ */
+export const ANIMATIONS = {
+  STATIC: 'static',
+  IDLE: 'idle',
+  WALK: 'walk',
+  SPRINT: 'sprint',
+  JUMP: 'jump',
+  FALL: 'fall',
+  CROUCH: 'crouch',
+  SIT: 'sit',
+  DIE: 'die',
+  EMOTE_YES: 'emote-yes',
+  EMOTE_NO: 'emote-no',
+} as const;
+
+/**
+ * Handles agent movement and GLTF animation playback.
+ */
+export class MovementAnimator {
+  private movements = new Map<string, MovementState>();
+  private clock = new THREE.Clock();
+
+  /**
+   * Check if an agent is currently moving.
+   */
+  isMoving(agentId: string): boolean {
+    return this.movements.has(agentId);
+  }
+
+  /**
+   * Start a movement animation for an agent.
+   */
+  startMovement(
+    agentId: string,
+    meshData: AgentMeshData,
+    targetPos: { x: number; y: number; z: number }
+  ): void {
+    const startPos = meshData.group.position.clone();
+    const endPos = new THREE.Vector3(targetPos.x, targetPos.y, targetPos.z);
+
+    const distance = startPos.distanceTo(endPos);
+    const duration = (distance / MOVE_SPEED) * 1000;
+
+    // Cancel existing movement
+    this.movements.delete(agentId);
+
+    // Store movement state
+    this.movements.set(agentId, {
+      agentId,
+      startPos,
+      endPos,
+      startTime: performance.now(),
+      duration: Math.max(duration, 200),
+    });
+
+    // Play walk animation
+    this.playAnimation(meshData, ANIMATIONS.WALK);
+
+    // Rotate character to face direction
+    this.faceDirection(meshData, startPos, endPos);
+  }
+
+  /**
+   * Cancel an agent's movement.
+   */
+  cancelMovement(agentId: string, meshData: AgentMeshData): void {
+    this.movements.delete(agentId);
+    this.playAnimation(meshData, ANIMATIONS.IDLE);
+  }
+
+  /**
+   * Play a specific animation on an agent.
+   */
+  playAnimation(meshData: AgentMeshData, animationName: string, options?: {
+    loop?: boolean;
+    fadeTime?: number;
+    timeScale?: number;
+  }): void {
+    if (!meshData.mixer) return;
+
+    const clip = meshData.animations.get(animationName);
+    if (!clip) {
+      console.warn(`[MovementAnimator] Animation not found: ${animationName}, available:`, Array.from(meshData.animations.keys()));
+      return;
+    }
+    console.log(`[MovementAnimator] Playing: ${animationName}`);
+
+    const {
+      loop = true,
+      fadeTime = 0.2,
+      timeScale = 1,
+    } = options ?? {};
+
+    const newAction = meshData.mixer.clipAction(clip);
+    newAction.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity);
+    newAction.clampWhenFinished = !loop;
+    newAction.timeScale = timeScale;
+
+    // Crossfade from current action
+    if (meshData.currentAction && meshData.currentAction !== newAction) {
+      meshData.currentAction.fadeOut(fadeTime);
+      newAction.reset().fadeIn(fadeTime).play();
+    } else {
+      newAction.reset().play();
+    }
+
+    meshData.currentAction = newAction;
+  }
+
+  /**
+   * Rotate character to face movement direction.
+   */
+  private faceDirection(
+    meshData: AgentMeshData,
+    from: THREE.Vector3,
+    to: THREE.Vector3
+  ): void {
+    const direction = new THREE.Vector3().subVectors(to, from).normalize();
+
+    if (direction.x !== 0 || direction.z !== 0) {
+      const characterBody = meshData.group.getObjectByName('characterBody');
+      if (characterBody) {
+        const angle = Math.atan2(direction.x, direction.z);
+        characterBody.rotation.y = angle;
+      }
+    }
+  }
+
+  /**
+   * Update all animations and movements.
+   * @param agentMeshes Map of agent IDs to mesh data
+   * @returns List of agent IDs that completed their movements
+   */
+  update(agentMeshes: Map<string, AgentMeshData>): string[] {
+    const deltaTime = this.clock.getDelta();
+    const now = performance.now();
+    const completed: string[] = [];
+
+    // Update all animation mixers
+    for (const meshData of agentMeshes.values()) {
+      meshData.mixer?.update(deltaTime);
+    }
+
+    // Update movement positions
+    for (const [agentId, movement] of this.movements) {
+      const meshData = agentMeshes.get(agentId);
+
+      if (!meshData) {
+        completed.push(agentId);
+        continue;
+      }
+
+      const elapsed = now - movement.startTime;
+      let t = Math.min(elapsed / movement.duration, 1);
+      t = this.easeOutCubic(t);
+
+      // Update position along path
+      meshData.group.position.lerpVectors(movement.startPos, movement.endPos, t);
+
+      // Smoothly rotate towards direction
+      this.smoothRotateToDirection(meshData, movement.startPos, movement.endPos, deltaTime);
+
+      if (t >= 1) {
+        completed.push(agentId);
+        meshData.group.position.copy(movement.endPos);
+        // Note: Status-based animation is handled by SceneManager using the completed list
+      }
+    }
+
+    // Clean up completed movements
+    for (const agentId of completed) {
+      this.movements.delete(agentId);
+    }
+
+    return completed;
+  }
+
+  /**
+   * Smoothly rotate character towards movement direction.
+   */
+  private smoothRotateToDirection(
+    meshData: AgentMeshData,
+    from: THREE.Vector3,
+    to: THREE.Vector3,
+    deltaTime: number
+  ): void {
+    const direction = new THREE.Vector3().subVectors(to, from).normalize();
+
+    if (direction.x === 0 && direction.z === 0) return;
+
+    const characterBody = meshData.group.getObjectByName('characterBody');
+    if (!characterBody) return;
+
+    const targetAngle = Math.atan2(direction.x, direction.z);
+    const currentAngle = characterBody.rotation.y;
+    const delta = targetAngle - currentAngle;
+
+    // Handle angle wrapping
+    const wrappedDelta = Math.atan2(Math.sin(delta), Math.cos(delta));
+
+    // Smooth rotation
+    const rotationSpeed = 10;
+    characterBody.rotation.y += wrappedDelta * Math.min(1, rotationSpeed * deltaTime);
+  }
+
+  /**
+   * Ease out cubic function.
+   */
+  private easeOutCubic(t: number): number {
+    return 1 - Math.pow(1 - t, 3);
+  }
+
+  /**
+   * Get number of active movements.
+   */
+  get activeCount(): number {
+    return this.movements.size;
+  }
+
+  /**
+   * Clear all movements.
+   */
+  clear(): void {
+    this.movements.clear();
+  }
+}

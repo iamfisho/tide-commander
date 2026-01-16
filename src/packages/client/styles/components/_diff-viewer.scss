@@ -1,0 +1,314 @@
+@use '../variables' as *;
+
+.diff-viewer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: $dracula-bg-darker;
+  font-family: $font-mono;
+}
+
+.diff-viewer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  background: $dracula-bg;
+  border-bottom: 1px solid $dracula-current;
+}
+
+.diff-viewer-filename {
+  font-size: 13px;
+  font-weight: 600;
+  color: $dracula-fg;
+}
+
+.diff-viewer-stats {
+  display: flex;
+  gap: 12px;
+}
+
+.diff-stat {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: $radius-sm;
+
+  &.added {
+    background: rgba($dracula-green, 0.2);
+    color: $dracula-green;
+  }
+
+  &.removed {
+    background: rgba($dracula-red, 0.2);
+    color: $dracula-red;
+  }
+
+  &.modified {
+    background: rgba($dracula-orange, 0.2);
+    color: $dracula-orange;
+  }
+}
+
+.diff-viewer-panels {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.diff-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-right: 1px solid $dracula-current;
+
+  &:last-child {
+    border-right: none;
+  }
+}
+
+.diff-panel-header {
+  padding: 8px 12px;
+  background: rgba($dracula-bg, 0.8);
+  border-bottom: 1px solid $dracula-current;
+}
+
+.diff-panel-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: $dracula-comment;
+  letter-spacing: 0.5px;
+
+  .diff-panel-original & {
+    color: $dracula-red;
+  }
+
+  .diff-panel-modified & {
+    color: $dracula-green;
+  }
+}
+
+.diff-panel-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: auto;
+
+  &::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: $dracula-bg-darker;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: $dracula-current;
+    border-radius: 4px;
+
+    &:hover {
+      background: $dracula-comment;
+    }
+  }
+}
+
+// Diff lines - height must match LINE_HEIGHT constant in DiffViewer.tsx
+.diff-line {
+  display: flex;
+  height: 20px;
+  line-height: 20px;
+  font-size: 12px;
+  white-space: pre;
+
+  &.diff-line-unchanged {
+    background: transparent;
+    color: $dracula-fg;
+  }
+
+  &.diff-line-added {
+    background: rgba($dracula-green, 0.15);
+
+    .diff-line-num {
+      background: rgba($dracula-green, 0.2);
+      color: $dracula-green;
+    }
+
+    .diff-line-content {
+      color: $dracula-fg;
+    }
+  }
+
+  &.diff-line-removed {
+    background: rgba($dracula-red, 0.15);
+
+    .diff-line-num {
+      background: rgba($dracula-red, 0.2);
+      color: $dracula-red;
+    }
+
+    .diff-line-content {
+      color: $dracula-fg;
+    }
+  }
+}
+
+.diff-line-num {
+  flex-shrink: 0;
+  width: 50px;
+  padding: 0 8px;
+  text-align: right;
+  color: $dracula-comment;
+  background: rgba($dracula-bg, 0.5);
+  border-right: 1px solid $dracula-current;
+  user-select: none;
+  font-size: 11px;
+}
+
+.diff-line-content {
+  flex: 1;
+  padding: 0 12px;
+  min-width: 0;
+}
+
+// Responsive - stack on narrow screens
+@media (max-width: 900px) {
+  .diff-viewer-panels {
+    flex-direction: column;
+  }
+
+  .diff-panel {
+    flex: none;
+    height: 50%;
+    border-right: none;
+    border-bottom: 1px solid $dracula-current;
+
+    &:last-child {
+      border-bottom: none;
+    }
+  }
+}
+
+// Prism syntax highlighting tokens (Dracula theme)
+.diff-line-content {
+  // Keywords (if, else, return, const, let, etc.)
+  .token.keyword {
+    color: $dracula-pink;
+  }
+
+  // Strings
+  .token.string,
+  .token.template-string {
+    color: $dracula-yellow;
+  }
+
+  // Numbers
+  .token.number {
+    color: $dracula-purple;
+  }
+
+  // Comments
+  .token.comment {
+    color: $dracula-comment;
+    font-style: italic;
+  }
+
+  // Functions
+  .token.function {
+    color: $dracula-green;
+  }
+
+  // Classes and types
+  .token.class-name,
+  .token.maybe-class-name {
+    color: $dracula-cyan;
+  }
+
+  // Operators
+  .token.operator {
+    color: $dracula-pink;
+  }
+
+  // Punctuation
+  .token.punctuation {
+    color: $dracula-fg;
+  }
+
+  // Boolean and null
+  .token.boolean,
+  .token.null,
+  .token.undefined {
+    color: $dracula-purple;
+  }
+
+  // Properties
+  .token.property {
+    color: $dracula-fg;
+  }
+
+  // Constants
+  .token.constant {
+    color: $dracula-purple;
+  }
+
+  // Tags (HTML/JSX)
+  .token.tag {
+    color: $dracula-pink;
+  }
+
+  // Attributes
+  .token.attr-name {
+    color: $dracula-green;
+  }
+
+  .token.attr-value {
+    color: $dracula-yellow;
+  }
+
+  // Regex
+  .token.regex {
+    color: $dracula-red;
+  }
+
+  // Imports
+  .token.imports,
+  .token.module {
+    color: $dracula-pink;
+  }
+
+  // Builtin
+  .token.builtin {
+    color: $dracula-cyan;
+  }
+
+  // Variable
+  .token.variable {
+    color: $dracula-fg;
+  }
+
+  // Parameter
+  .token.parameter {
+    color: $dracula-orange;
+  }
+
+  // Spread
+  .token.spread {
+    color: $dracula-pink;
+  }
+
+  // Arrow function
+  .token.arrow {
+    color: $dracula-pink;
+  }
+
+  // Template literal interpolation
+  .token.interpolation {
+    color: $dracula-fg;
+  }
+
+  .token.interpolation-punctuation {
+    color: $dracula-pink;
+  }
+}
