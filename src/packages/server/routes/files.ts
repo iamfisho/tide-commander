@@ -8,13 +8,16 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
 import * as os from 'os';
+import { logger } from '../utils/logger.js';
+
+const log = logger.files;
 
 // Get or create temp directory for tide-commander uploads
 const TEMP_DIR = path.join(os.tmpdir(), 'tide-commander-uploads');
 if (!fs.existsSync(TEMP_DIR)) {
   fs.mkdirSync(TEMP_DIR, { recursive: true });
 }
-console.log(`[Files] Temp upload directory: ${TEMP_DIR}`);
+log.log(` Temp upload directory: ${TEMP_DIR}`);
 
 // File entry for directory listing
 interface FileEntry {
@@ -85,7 +88,7 @@ router.get('/read', async (req: Request, res: Response) => {
       modified: stats.mtime,
     });
   } catch (err: any) {
-    console.error('[Routes] Failed to read file:', err);
+    log.error(' Failed to read file:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -154,7 +157,7 @@ router.get('/list', async (req: Request, res: Response) => {
       files,
     });
   } catch (err: any) {
-    console.error('[Routes] Failed to list directory:', err);
+    log.error(' Failed to list directory:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -245,7 +248,7 @@ router.get('/tree', async (req: Request, res: Response) => {
       tree,
     });
   } catch (err: any) {
-    console.error('[Routes] Failed to build tree:', err);
+    log.error(' Failed to build tree:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -327,7 +330,7 @@ router.get('/search', async (req: Request, res: Response) => {
 
     res.json({ results });
   } catch (err: any) {
-    console.error('[Routes] Failed to search files:', err);
+    log.error(' Failed to search files:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -377,7 +380,7 @@ router.get('/git-status', async (req: Request, res: Response) => {
         maxBuffer: 10 * 1024 * 1024, // 10MB buffer
       });
     } catch (err) {
-      console.error('[Routes] Git status failed:', err);
+      log.error(' Git status failed:', err);
       res.json({ isGitRepo: true, files: [], error: 'Failed to get git status' });
       return;
     }
@@ -458,7 +461,7 @@ router.get('/git-status', async (req: Request, res: Response) => {
       },
     });
   } catch (err: any) {
-    console.error('[Routes] Failed to get git status:', err);
+    log.error(' Failed to get git status:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -524,7 +527,7 @@ router.get('/git-original', async (req: Request, res: Response) => {
       isNew: false,
     });
   } catch (err: any) {
-    console.error('[Routes] Failed to get git original:', err);
+    log.error(' Failed to get git original:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -576,7 +579,7 @@ router.get('/git-diff', async (req: Request, res: Response) => {
       diff,
     });
   } catch (err: any) {
-    console.error('[Routes] Failed to get git diff:', err);
+    log.error(' Failed to get git diff:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -632,7 +635,7 @@ router.post('/upload', async (req: Request, res: Response) => {
       // Write file
       fs.writeFileSync(filePath, buffer);
 
-      console.log(`[Files] Uploaded: ${filePath} (${buffer.length} bytes)`);
+      log.log(` Uploaded: ${filePath} (${buffer.length} bytes)`);
 
       res.json({
         success: true,
@@ -646,11 +649,11 @@ router.post('/upload', async (req: Request, res: Response) => {
     });
 
     req.on('error', (err) => {
-      console.error('[Files] Upload error:', err);
+      log.error(' Upload error:', err);
       res.status(500).json({ error: 'Upload failed' });
     });
   } catch (err: any) {
-    console.error('[Files] Failed to upload file:', err);
+    log.error(' Failed to upload file:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -680,7 +683,7 @@ router.delete('/temp/:filename', (req: Request<{ filename: string }>, res: Respo
     fs.unlinkSync(filePath);
     res.json({ success: true });
   } catch (err: any) {
-    console.error('[Files] Failed to delete temp file:', err);
+    log.error(' Failed to delete temp file:', err);
     res.status(500).json({ error: err.message });
   }
 });

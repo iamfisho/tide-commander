@@ -7,6 +7,9 @@ import { ClaudeRunner, StandardEvent } from '../claude/index.js';
 import { getSessionActivityStatus } from '../claude/session-loader.js';
 import * as agentService from './agent-service.js';
 import * as supervisorService from './supervisor-service.js';
+import { logger } from '../utils/logger.js';
+
+const log = logger.claude;
 
 // Event types emitted by Claude service
 export interface ClaudeServiceEvents {
@@ -78,7 +81,7 @@ export function init(): void {
     syncAllAgentStatus();
   }, STATUS_SYNC_INTERVAL);
 
-  console.log('[ClaudeService] Initialized with periodic status sync');
+  log.log(' Initialized with periodic status sync');
 }
 
 export async function shutdown(): Promise<void> {
@@ -129,11 +132,11 @@ function emit<K extends keyof ClaudeServiceEvents>(
 function handleEvent(agentId: string, event: StandardEvent): void {
   const agent = agentService.getAgent(agentId);
   if (!agent) {
-    console.log(`[ClaudeService] handleEvent: agent ${agentId} not found, ignoring event ${event.type}`);
+    log.log(` handleEvent: agent ${agentId} not found, ignoring event ${event.type}`);
     return;
   }
 
-  console.log(`[ClaudeService] handleEvent: agent=${agentId}, event.type=${event.type}, current status=${agent.status}`);
+  log.log(` handleEvent: agent=${agentId}, event.type=${event.type}, current status=${agent.status}`);
 
   switch (event.type) {
     case 'init':
@@ -154,7 +157,7 @@ function handleEvent(agentId: string, event: StandardEvent): void {
     case 'step_complete':
       // step_complete (result event) signals Claude finished processing this turn
       // Update tokens and set status to idle
-      console.log(`[ClaudeService] Agent ${agentId} received step_complete event, tokens:`, event.tokens);
+      log.log(` Agent ${agentId} received step_complete event, tokens:`, event.tokens);
       if (event.tokens) {
         const newTokens =
           (agent.tokensUsed || 0) + event.tokens.input + event.tokens.output;
@@ -165,7 +168,7 @@ function handleEvent(agentId: string, event: StandardEvent): void {
           event.tokens.input +
           (event.tokens.cacheCreation || 0) +
           (event.tokens.cacheRead || 0);
-        console.log(`[ClaudeService] Agent ${agentId} step_complete: input=${event.tokens.input}, output=${event.tokens.output}, cacheCreation=${event.tokens.cacheCreation}, cacheRead=${event.tokens.cacheRead}, contextUsed=${contextUsed}, cost=${event.cost}, setting to idle`);
+        log.log(` Agent ${agentId} step_complete: input=${event.tokens.input}, output=${event.tokens.output}, cacheCreation=${event.tokens.cacheCreation}, cacheRead=${event.tokens.cacheRead}, contextUsed=${contextUsed}, cost=${event.cost}, setting to idle`);
         const updated = agentService.updateAgent(agentId, {
           tokensUsed: newTokens,
           contextUsed: contextUsed,
@@ -173,15 +176,15 @@ function handleEvent(agentId: string, event: StandardEvent): void {
           currentTask: undefined,
           currentTool: undefined,
         });
-        console.log(`[ClaudeService] Agent ${agentId} after update: status=${updated?.status}, contextUsed=${updated?.contextUsed}`);
+        log.log(` Agent ${agentId} after update: status=${updated?.status}, contextUsed=${updated?.contextUsed}`);
       } else {
-        console.log(`[ClaudeService] Agent ${agentId} step_complete but no tokens, setting to idle anyway`);
+        log.log(` Agent ${agentId} step_complete but no tokens, setting to idle anyway`);
         const updated = agentService.updateAgent(agentId, {
           status: 'idle',
           currentTask: undefined,
           currentTool: undefined,
         });
-        console.log(`[ClaudeService] Agent ${agentId} after update (no tokens): status=${updated?.status}`);
+        log.log(` Agent ${agentId} after update (no tokens): status=${updated?.status}`);
       }
       break;
 
@@ -201,12 +204,12 @@ function handleOutput(agentId: string, text: string, isStreaming?: boolean): voi
 }
 
 function handleSessionId(agentId: string, sessionId: string): void {
-  console.log(`[ClaudeService] Agent ${agentId} got session ID: ${sessionId}`);
+  log.log(` Agent ${agentId} got session ID: ${sessionId}`);
   agentService.updateAgent(agentId, { sessionId });
 }
 
 function handleComplete(agentId: string, success: boolean): void {
-  console.log(`[ClaudeService] Agent ${agentId} completed, success: ${success}`);
+  log.log(` Agent ${agentId} completed, success: ${success}`);
 
   // Process completed, set to idle
   agentService.updateAgent(agentId, {
@@ -219,7 +222,7 @@ function handleComplete(agentId: string, success: boolean): void {
 }
 
 function handleError(agentId: string, error: string): void {
-  console.error(`[ClaudeService] Agent ${agentId} error:`, error);
+  log.error(` Agent ${agentId} error:`, error);
   agentService.updateAgent(agentId, { status: 'error' });
   emit('error', agentId, error);
 }
@@ -239,7 +242,7 @@ async function executeCommand(agentId: string, command: string): Promise<void> {
     throw new Error(`Agent not found: ${agentId}`);
   }
 
-  console.log(`[ClaudeService] Executing command for ${agentId}: ${command.substring(0, 50)}...`);
+  log.log(` Executing command for ${agentId}: ${command.substring(0, 50)}...`);
 
   // Notify that command is starting (so client can show user prompt in conversation)
   notifyCommandStarted(agentId, command);
@@ -250,7 +253,7 @@ async function executeCommand(agentId: string, command: string): Promise<void> {
     lastAssignedTask: command, // Store full command for supervisor context
     lastAssignedTaskTime: Date.now(),
   });
-  console.log(`[ClaudeService] Agent ${agentId} status updated to 'working', updated agent:`, updated?.status);
+  log.log(` Agent ${agentId} status updated to 'working', updated agent:`, updated?.status);
 
   await runner.run({
     agentId,
@@ -279,13 +282,13 @@ export async function sendCommand(agentId: string, command: string): Promise<voi
   if (runner.isRunning(agentId)) {
     const sent = runner.sendMessage(agentId, command);
     if (sent) {
-      console.log(`[ClaudeService] Sent message directly to running process for ${agentId}: ${command.substring(0, 50)}...`);
+      log.log(` Sent message directly to running process for ${agentId}: ${command.substring(0, 50)}...`);
       // Notify that command started (for UI feedback)
       notifyCommandStarted(agentId, command);
       return;
     }
     // If sending failed, fall through to start new process
-    console.log(`[ClaudeService] Failed to send to running process, starting new one for ${agentId}`);
+    log.log(` Failed to send to running process, starting new one for ${agentId}`);
   }
 
   // Agent is idle or sending failed, execute with new process
@@ -354,7 +357,7 @@ export async function syncAgentStatus(agentId: string): Promise<void> {
 
   // Case 1: Agent shows 'working' but no tracked process and not recently active -> set to idle
   if (agent.status === 'working' && !isRecentlyActive) {
-    console.log(`[ClaudeService] Agent ${agent.name} status sync: was 'working' but no process and not recently active, setting to 'idle'`);
+    log.log(` Agent ${agent.name} status sync: was 'working' but no process and not recently active, setting to 'idle'`);
     agentService.updateAgent(agentId, {
       status: 'idle',
       currentTask: undefined,
@@ -364,7 +367,7 @@ export async function syncAgentStatus(agentId: string): Promise<void> {
   // Case 2: Agent shows 'idle' but session is recently active with pending work -> set to working
   // This handles server restart while Claude was processing
   else if (agent.status === 'idle' && isRecentlyActive) {
-    console.log(`[ClaudeService] Agent ${agent.name} status sync: was 'idle' but session recently active with pending work, setting to 'working'`);
+    log.log(` Agent ${agent.name} status sync: was 'idle' but session recently active with pending work, setting to 'working'`);
     agentService.updateAgent(agentId, {
       status: 'working',
       currentTask: 'Processing...',
@@ -378,5 +381,5 @@ export async function syncAgentStatus(agentId: string): Promise<void> {
 export async function syncAllAgentStatus(): Promise<void> {
   const agents = agentService.getAllAgents();
   await Promise.all(agents.map(agent => syncAgentStatus(agent.id)));
-  console.log(`[ClaudeService] Synced status for ${agents.length} agents`);
+  log.log(` Synced status for ${agents.length} agents`);
 }

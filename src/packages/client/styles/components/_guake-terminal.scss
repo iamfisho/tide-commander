@@ -426,7 +426,7 @@
     transition: all $transition-fast;
 
     &:hover:not(:disabled) {
-      background: lighten($dracula-cyan, 10%);
+      background: color.adjust($dracula-cyan, $lightness: 10%);
     }
 
     &:disabled {
@@ -684,7 +684,7 @@
     outline: none;
     border-color: $dracula-purple;
     box-shadow: 0 0 0 3px rgba($dracula-purple, 0.25), inset 0 0 0 1px rgba($dracula-purple, 0.1);
-    background: lighten($dracula-bg, 3%);
+    background: color.adjust($dracula-bg, $lightness: 3%);
   }
 
   &::placeholder {
@@ -730,7 +730,7 @@
   transition: all $transition-normal;
 
   &:hover:not(:disabled) {
-    background: lighten($dracula-cyan, 10%);
+    background: color.adjust($dracula-cyan, $lightness: 10%);
     transform: translateY(-1px);
     box-shadow: 0 2px 8px rgba($dracula-cyan, 0.4);
   }
@@ -1576,8 +1576,8 @@
   transition: all $transition-fast;
 
   &:hover {
-    border-color: lighten($dracula-cyan, 10%);
-    color: lighten($dracula-cyan, 10%);
+    border-color: color.adjust($dracula-cyan, $lightness: 10%);
+    color: color.adjust($dracula-cyan, $lightness: 10%);
     background: rgba($dracula-cyan, 0.25);
     transform: scale(1.05);
   }

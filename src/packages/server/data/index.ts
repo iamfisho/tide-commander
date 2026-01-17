@@ -14,6 +14,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import type { Agent, DrawingArea, AgentSupervisorHistory, AgentSupervisorHistoryEntry } from '../../shared/types.js';
+import { createLogger } from '../utils/logger.js';
+
+const log = createLogger('Data');
 
 // XDG-compliant data directory
 const DATA_DIR = path.join(
@@ -58,7 +61,7 @@ export interface TideData {
 function ensureDataDir(): void {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
-    console.log(`[TideData] Created data directory: ${DATA_DIR}`);
+    log.log(` Created data directory: ${DATA_DIR}`);
   }
 }
 
@@ -71,11 +74,11 @@ export function loadAgents(): StoredAgent[] {
   try {
     if (fs.existsSync(AGENTS_FILE)) {
       const data: TideData = JSON.parse(fs.readFileSync(AGENTS_FILE, 'utf-8'));
-      console.log(`[TideData] Loaded ${data.agents.length} agents from ${AGENTS_FILE}`);
+      log.log(` Loaded ${data.agents.length} agents from ${AGENTS_FILE}`);
       return data.agents;
     }
   } catch (err) {
-    console.error('[TideData] Failed to load agents:', err);
+    log.error(' Failed to load agents:', err);
   }
 
   return [];
@@ -113,7 +116,7 @@ export function saveAgents(agents: Agent[]): void {
 
     fs.writeFileSync(AGENTS_FILE, JSON.stringify(data, null, 2));
   } catch (err) {
-    console.error('[TideData] Failed to save agents:', err);
+    log.error(' Failed to save agents:', err);
   }
 }
 
@@ -129,7 +132,7 @@ export function loadAreas(): DrawingArea[] {
       return data.areas || [];
     }
   } catch (err) {
-    console.error('[TideData] Failed to load areas:', err);
+    log.error(' Failed to load areas:', err);
   }
 
   return [];
@@ -148,7 +151,7 @@ export function saveAreas(areas: DrawingArea[]): void {
     };
     fs.writeFileSync(AREAS_FILE, JSON.stringify(data, null, 2));
   } catch (err) {
-    console.error('[TideData] Failed to save areas:', err);
+    log.error(' Failed to save areas:', err);
   }
 }
 
@@ -209,11 +212,11 @@ export function loadSupervisorHistory(): Map<string, AgentSupervisorHistoryEntry
   try {
     if (fs.existsSync(SUPERVISOR_HISTORY_FILE)) {
       const data: SupervisorHistoryData = JSON.parse(fs.readFileSync(SUPERVISOR_HISTORY_FILE, 'utf-8'));
-      console.log(`[TideData] Loaded supervisor history for ${Object.keys(data.histories).length} agents`);
+      log.log(` Loaded supervisor history for ${Object.keys(data.histories).length} agents`);
       return new Map(Object.entries(data.histories));
     }
   } catch (err) {
-    console.error('[TideData] Failed to load supervisor history:', err);
+    log.error(' Failed to load supervisor history:', err);
   }
 
   return new Map();
@@ -234,7 +237,7 @@ export function saveSupervisorHistory(histories: Map<string, AgentSupervisorHist
 
     fs.writeFileSync(SUPERVISOR_HISTORY_FILE, JSON.stringify(data, null, 2));
   } catch (err) {
-    console.error('[TideData] Failed to save supervisor history:', err);
+    log.error(' Failed to save supervisor history:', err);
   }
 }
 

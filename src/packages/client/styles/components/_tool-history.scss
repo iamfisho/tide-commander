@@ -1,3 +1,4 @@
+@use 'sass:color';
 @use '../variables' as *;
 
 .tool-history-section {
@@ -47,7 +48,7 @@
   transition: background $transition-fast, color $transition-fast;
 
   &:hover {
-    background: lighten($bg-tertiary, 5%);
+    background: color.adjust($bg-tertiary, $lightness: 5%);
     color: $text-primary;
   }
 }

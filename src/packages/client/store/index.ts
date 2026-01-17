@@ -1,5 +1,6 @@
 import type {
   Agent,
+  AgentAnalysis,
   AgentClass,
   ClientMessage,
   DrawingArea,
@@ -382,6 +383,37 @@ class Store {
   // Get supervisor history for an agent (from local cache)
   getAgentSupervisorHistory(agentId: string): AgentSupervisorHistoryEntry[] {
     return this.state.supervisor.agentHistories.get(agentId) || [];
+  }
+
+  // Add a single agent analysis to history (from real-time event)
+  addAgentAnalysis(agentId: string, analysis: AgentAnalysis): void {
+    const newHistories = new Map(this.state.supervisor.agentHistories);
+    const agentHistory = newHistories.get(agentId) || [];
+
+    // Create a new history entry from the analysis
+    const newEntry: AgentSupervisorHistoryEntry = {
+      id: `single-${Date.now()}-${agentId}`,
+      timestamp: Date.now(),
+      reportId: `single-${Date.now()}`,
+      analysis,
+    };
+
+    // Add to beginning (most recent first), avoid duplicates within 5 seconds
+    const recentDuplicate = agentHistory.some(
+      e => Math.abs(e.timestamp - newEntry.timestamp) < 5000 &&
+           e.analysis.statusDescription === analysis.statusDescription
+    );
+
+    if (!recentDuplicate) {
+      const updatedHistory = [newEntry, ...agentHistory];
+      // Keep max 50 entries
+      if (updatedHistory.length > 50) {
+        updatedHistory.pop();
+      }
+      newHistories.set(agentId, updatedHistory);
+      this.state.supervisor.agentHistories = newHistories;
+      this.notify();
+    }
   }
 
   // Check if history is being loaded for an agent

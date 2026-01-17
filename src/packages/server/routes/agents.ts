@@ -10,6 +10,9 @@ import * as os from 'os';
 import { agentService, claudeService } from '../services/index.js';
 import { getClaudeProjectDir } from '../data/index.js';
 import { listSessions, loadSession } from '../claude/session-loader.js';
+import { createLogger } from '../utils/logger.js';
+
+const log = createLogger('Routes');
 
 const router = Router();
 
@@ -104,7 +107,7 @@ router.get('/claude-sessions', async (req: Request, res: Response) => {
     // Return top 20 sessions
     res.json({ sessions: allSessions.slice(0, 20) });
   } catch (err: any) {
-    console.error('[Routes] Failed to list Claude sessions:', err);
+    log.error(' Failed to list Claude sessions:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -117,7 +120,7 @@ router.get('/tool-history', async (req: Request, res: Response) => {
     const result = await agentService.getAllToolHistory(limit);
     res.json(result);
   } catch (err: any) {
-    console.error('[Routes] Failed to load tool history:', err);
+    log.error(' Failed to load tool history:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -142,7 +145,7 @@ router.get('/status', async (_req: Request, res: Response) => {
 
     res.json(statuses);
   } catch (err: any) {
-    console.error('[Routes] Failed to get agent status:', err);
+    log.error(' Failed to get agent status:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -166,7 +169,7 @@ router.post('/', async (req: Request, res: Response) => {
     const agent = await agentService.createAgent(name, agentClass, cwd, position);
     res.status(201).json(agent);
   } catch (err: any) {
-    console.error('[Routes] Failed to create agent:', err);
+    log.error(' Failed to create agent:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -219,7 +222,7 @@ router.get('/:id/sessions', async (req: Request<{ id: string }>, res: Response) 
 
     res.json(result);
   } catch (err: any) {
-    console.error('[Routes] Failed to list sessions:', err);
+    log.error(' Failed to list sessions:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -242,7 +245,7 @@ router.get('/:id/history', async (req: Request<{ id: string }>, res: Response) =
       claudeProjectDir: agent ? getClaudeProjectDir(agent.cwd) : null,
     });
   } catch (err: any) {
-    console.error('[Routes] Failed to load history:', err);
+    log.error(' Failed to load history:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -267,7 +270,7 @@ router.get('/:id/search', async (req: Request<{ id: string }>, res: Response) =>
 
     res.json(result);
   } catch (err: any) {
-    console.error('[Routes] Failed to search history:', err);
+    log.error(' Failed to search history:', err);
     res.status(500).json({ error: err.message });
   }
 });

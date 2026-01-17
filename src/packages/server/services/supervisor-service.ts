@@ -9,6 +9,7 @@ import { StringDecoder } from 'string_decoder';
 import * as agentService from './agent-service.js';
 import type {
   ActivityNarrative,
+  Agent,
   AgentStatusSummary,
   SupervisorReport,
   SupervisorConfig,
@@ -25,6 +26,9 @@ import {
   getAgentSupervisorHistory as getAgentHistoryFromStorage,
   deleteSupervisorHistory,
 } from '../data/index.js';
+import { logger } from '../utils/logger.js';
+
+const log = logger.supervisor;
 
 // In-memory narrative storage per agent
 const narratives = new Map<string, ActivityNarrative[]>();
@@ -43,7 +47,11 @@ let config: SupervisorConfig = {
 let reportDebounceTimer: NodeJS.Timeout | null = null;
 const REPORT_DEBOUNCE_MS = 3000; // Wait 3 seconds after last event before generating
 
-// Track if a report is currently being generated
+// Per-agent debounce timers for single-agent report generation
+const agentReportTimers = new Map<string, NodeJS.Timeout>();
+const agentReportInProgress = new Set<string>();
+
+// Track if a full report is currently being generated
 let isGeneratingReport = false;
 
 // Latest report
@@ -63,8 +71,8 @@ const claudeBackend = new ClaudeBackend();
 export function init(): void {
   // Load persisted supervisor history
   supervisorHistory = loadSupervisorHistory();
-  console.log('[SupervisorService] Initialized (event-driven mode, using Claude Code)');
-  console.log(`[SupervisorService] Loaded history for ${supervisorHistory.size} agents`);
+  log.log(' Initialized (event-driven mode, using Claude Code)');
+  log.log(` Loaded history for ${supervisorHistory.size} agents`);
 }
 
 export function shutdown(): void {
@@ -154,53 +162,57 @@ export function generateNarrative(
   // Emit for real-time updates
   emit('narrative', { agentId, narrative: activityNarrative });
 
-  // Trigger report generation on significant events (task start or complete)
+  // Trigger single-agent report generation on significant events (task start or complete)
   if (event.type === 'init' || event.type === 'step_complete') {
-    console.log(`[Supervisor] Event trigger: ${event.type} from agent ${agentId}`);
-    scheduleReportGeneration();
+    log.log(` Event trigger: ${event.type} from agent ${agentId}`);
+    scheduleAgentReportGeneration(agentId);
   }
 
   return activityNarrative;
 }
 
 /**
- * Schedule a report generation with debouncing
- * This ensures we don't generate too many reports in quick succession
+ * Schedule a single-agent report generation with debouncing
+ * Only updates the specific agent that had activity, not all agents
  */
-function scheduleReportGeneration(): void {
+function scheduleAgentReportGeneration(agentId: string): void {
   if (!config.enabled) {
-    console.log('[Supervisor] Disabled, skipping scheduled report');
+    log.log(' Disabled, skipping scheduled agent report');
     return;
   }
 
-  // Clear any existing timer
-  if (reportDebounceTimer) {
-    clearTimeout(reportDebounceTimer);
+  // Clear any existing timer for this agent
+  const existingTimer = agentReportTimers.get(agentId);
+  if (existingTimer) {
+    clearTimeout(existingTimer);
   }
 
-  console.log(`[Supervisor] Scheduled report generation (${REPORT_DEBOUNCE_MS}ms debounce)`);
+  log.log(` Scheduled single-agent report for ${agentId} (${REPORT_DEBOUNCE_MS}ms debounce)`);
 
   // Schedule report generation after debounce period
-  reportDebounceTimer = setTimeout(async () => {
-    if (isGeneratingReport) {
-      console.log('[Supervisor] Report already in progress, skipping scheduled');
+  const timer = setTimeout(async () => {
+    agentReportTimers.delete(agentId);
+
+    if (agentReportInProgress.has(agentId)) {
+      log.log(` Report already in progress for ${agentId}, skipping`);
       return;
     }
 
-    // Check if we have any agents at all
-    const agents = agentService.getAllAgents();
-    if (agents.length === 0) {
-      console.log('[Supervisor] No agents, skipping report');
+    const agent = agentService.getAgent(agentId);
+    if (!agent) {
+      log.log(` Agent ${agentId} not found, skipping report`);
       return;
     }
 
     try {
-      console.log('[Supervisor] Debounce complete, generating report...');
-      await generateReport();
+      log.log(` Generating single-agent report for ${agent.name}...`);
+      await generateSingleAgentReport(agentId);
     } catch (err) {
-      console.error('[Supervisor] Report generation failed:', err);
+      log.error(` Single-agent report failed for ${agentId}:`, err);
     }
   }, REPORT_DEBOUNCE_MS);
+
+  agentReportTimers.set(agentId, timer);
 }
 
 function formatToolNarrative(
@@ -308,11 +320,11 @@ export function clearNarratives(agentId: string): void {
 // ============================================================================
 
 export async function generateReport(): Promise<SupervisorReport> {
-  console.log('[Supervisor] generateReport() called');
+  log.log(' generateReport() called');
 
   // If already generating, return the latest report (or wait for current one)
   if (isGeneratingReport) {
-    console.log('[Supervisor] Report already in progress, returning latest');
+    log.log(' Report already in progress, returning latest');
     // Return latest report if available, otherwise return a pending status
     if (latestReport) {
       return latestReport;
@@ -329,7 +341,7 @@ export async function generateReport(): Promise<SupervisorReport> {
   }
 
   isGeneratingReport = true;
-  console.log('[Supervisor] Starting report generation...');
+  log.log(' Starting report generation...');
 
   try {
     const agents = agentService.getAllAgents();
@@ -407,7 +419,7 @@ export async function generateReport(): Promise<SupervisorReport> {
     try {
       response = await callClaudeForAnalysis(prompt);
     } catch (err) {
-      console.error('[SupervisorService] Claude API call failed:', err);
+      log.error(' Claude API call failed:', err);
       // Return fallback report (but still emit it to clients)
       const fallbackReport = createFallbackReport(agentSummaries);
       latestReport = fallbackReport;
@@ -422,13 +434,216 @@ export async function generateReport(): Promise<SupervisorReport> {
     saveReportToHistory(report);
 
     latestReport = report;
-    console.log(`[Supervisor] ✓ Report generated successfully (${report.agentSummaries.length} agents analyzed)`);
+    log.log(` ✓ Report generated successfully (${report.agentSummaries.length} agents analyzed)`);
     emit('report', report);
 
     return report;
   } finally {
     isGeneratingReport = false;
   }
+}
+
+/**
+ * Generate a supervisor report for a single agent
+ * Used when an agent finishes a task - only analyzes that specific agent
+ */
+async function generateSingleAgentReport(agentId: string): Promise<void> {
+  const agent = agentService.getAgent(agentId);
+  if (!agent) return;
+
+  agentReportInProgress.add(agentId);
+
+  try {
+    // Build agent summary
+    const agentSummary = await buildAgentSummary(agent);
+
+    // Build a simpler prompt for single agent
+    const prompt = buildSingleAgentPrompt(agentSummary);
+
+    let response: string;
+    try {
+      response = await callClaudeForAnalysis(prompt);
+    } catch (err) {
+      log.error(` Claude API call failed for single agent ${agent.name}:`, err);
+      // Create fallback analysis
+      const fallbackAnalysis: AgentAnalysis = {
+        agentId: agent.id,
+        agentName: agent.name,
+        statusDescription: `${agent.status} - ${agent.currentTask || 'Task completed'}`,
+        progress: agent.status === 'working' ? 'on_track' : 'idle',
+        recentWorkSummary: agentSummary.recentNarratives[0]?.narrative || 'No recent activity',
+      };
+      saveSingleAgentToHistory(fallbackAnalysis);
+      emit('agent_analysis', { agentId, analysis: fallbackAnalysis });
+      return;
+    }
+
+    // Parse response
+    const analysis = parseSingleAgentResponse(response, agentSummary);
+
+    // Save to history
+    saveSingleAgentToHistory(analysis);
+
+    // Emit the single agent update (not a full report)
+    emit('agent_analysis', { agentId, analysis });
+
+    log.log(` ✓ Single-agent report generated for ${agent.name}`);
+  } finally {
+    agentReportInProgress.delete(agentId);
+  }
+}
+
+/**
+ * Build summary data for a single agent
+ */
+async function buildAgentSummary(agent: Agent): Promise<AgentStatusSummary> {
+  let sessionNarratives: ActivityNarrative[] = [];
+  if (agent.sessionId) {
+    try {
+      const history = await loadSession(agent.cwd, agent.sessionId, 20);
+      if (history && history.messages.length > 0) {
+        sessionNarratives = history.messages.map((msg, index) => ({
+          id: `session-${agent.sessionId}-${index}`,
+          agentId: agent.id,
+          timestamp: new Date(msg.timestamp).getTime(),
+          type: msg.type === 'user' ? 'task_start' as const :
+                msg.type === 'tool_use' ? 'tool_use' as const :
+                msg.type === 'tool_result' ? 'output' as const : 'output' as const,
+          narrative: msg.type === 'user' ? `User asked: "${truncate(msg.content, 150)}"` :
+                    msg.type === 'assistant' ? `Responded: "${truncate(msg.content, 150)}"` :
+                    msg.type === 'tool_use' ? `Used tool: ${msg.toolName}` :
+                    `Tool result received`,
+          toolName: msg.toolName,
+        }));
+      }
+    } catch (err) {
+      log.error(` Failed to load session for ${agent.name}:`, err);
+    }
+  }
+
+  const inMemoryNarratives = getNarratives(agent.id).slice(0, 10);
+  const allNarratives = inMemoryNarratives.length > 0
+    ? inMemoryNarratives
+    : sessionNarratives.slice(-10);
+
+  return {
+    id: agent.id,
+    name: agent.name,
+    class: agent.class,
+    status: agent.status,
+    currentTask: agent.currentTask,
+    lastAssignedTask: agent.lastAssignedTask,
+    lastAssignedTaskTime: agent.lastAssignedTaskTime,
+    recentNarratives: allNarratives,
+    tokensUsed: agent.tokensUsed,
+    contextUsed: agent.contextUsed,
+    lastActivityTime: agent.lastActivity,
+  };
+}
+
+/**
+ * Build a prompt for analyzing a single agent
+ */
+function buildSingleAgentPrompt(summary: AgentStatusSummary): string {
+  const taskAssignedSecondsAgo = summary.lastAssignedTaskTime
+    ? Math.round((Date.now() - summary.lastAssignedTaskTime) / 1000)
+    : null;
+
+  const agentData = {
+    id: summary.id,
+    name: summary.name,
+    class: summary.class,
+    status: summary.status,
+    currentTask: summary.currentTask || 'None',
+    assignedTask: summary.lastAssignedTask
+      ? truncate(summary.lastAssignedTask, 500)
+      : 'No task assigned yet',
+    taskAssignedSecondsAgo,
+    tokensUsed: summary.tokensUsed,
+    contextPercent: Math.round((summary.contextUsed / 200000) * 100),
+    timeSinceActivity: Math.round((Date.now() - summary.lastActivityTime) / 1000),
+    recentActivities: summary.recentNarratives.map((n) => n.narrative).slice(0, 5),
+  };
+
+  return SINGLE_AGENT_PROMPT.replace('{{AGENT_DATA}}', JSON.stringify(agentData, null, 2));
+}
+
+const SINGLE_AGENT_PROMPT = `You are a Supervisor AI analyzing a single coding agent's recent activity.
+
+## Agent Data
+{{AGENT_DATA}}
+
+## CRITICAL RULES
+- If "status" is "working", use present tense: "Working on...", "Editing...", "Implementing..."
+- If "status" is "idle", they finished. Use: "Idle - Last worked on [brief description of assignedTask or recentActivities]"
+- NEVER say "No current task" - always describe what they were working on based on assignedTask or recentActivities
+- Keep statusDescription concise (under 80 characters)
+
+## Response Format
+Respond with ONLY this JSON (no markdown fences):
+{
+  "agentId": "copy from input",
+  "agentName": "copy from input",
+  "statusDescription": "Concise current/last activity",
+  "progress": "on_track" | "stalled" | "blocked" | "completed" | "idle",
+  "recentWorkSummary": "2-3 sentence summary of recent work",
+  "concerns": []
+}`;
+
+/**
+ * Parse Claude's response for a single agent
+ */
+function parseSingleAgentResponse(response: string, summary: AgentStatusSummary): AgentAnalysis {
+  try {
+    let jsonStr = response.trim();
+
+    // Remove markdown code fences if present
+    if (jsonStr.startsWith('```json')) {
+      jsonStr = jsonStr.slice(7);
+    } else if (jsonStr.startsWith('```')) {
+      jsonStr = jsonStr.slice(3);
+    }
+    if (jsonStr.endsWith('```')) {
+      jsonStr = jsonStr.slice(0, -3);
+    }
+    jsonStr = jsonStr.trim();
+
+    const parsed = JSON.parse(jsonStr);
+
+    return {
+      agentId: parsed.agentId || summary.id,
+      agentName: parsed.agentName || summary.name,
+      statusDescription: parsed.statusDescription || `${summary.status} - ${summary.currentTask || 'Task completed'}`,
+      progress: parsed.progress || (summary.status === 'working' ? 'on_track' : 'idle'),
+      recentWorkSummary: parsed.recentWorkSummary || 'No recent activity',
+      concerns: parsed.concerns || [],
+    };
+  } catch (err) {
+    log.error(' Failed to parse single agent response:', err);
+    return {
+      agentId: summary.id,
+      agentName: summary.name,
+      statusDescription: `${summary.status} - ${summary.currentTask || 'Task completed'}`,
+      progress: summary.status === 'working' ? 'on_track' : 'idle',
+      recentWorkSummary: summary.recentNarratives[0]?.narrative || 'No recent activity',
+    };
+  }
+}
+
+/**
+ * Save a single agent's analysis to history
+ */
+function saveSingleAgentToHistory(analysis: AgentAnalysis): void {
+  const entry: AgentSupervisorHistoryEntry = {
+    id: generateId(),
+    timestamp: Date.now(),
+    reportId: `single-${generateId()}`,
+    analysis,
+  };
+
+  addSupervisorHistoryEntry(supervisorHistory, analysis.agentId, entry);
+  saveSupervisorHistory(supervisorHistory);
+  log.log(` Saved single-agent history entry for ${analysis.agentName}`);
 }
 
 function buildSupervisorPrompt(summaries: AgentStatusSummary[]): string {
@@ -517,7 +732,7 @@ Respond ONLY with the JSON object, no markdown code fences or additional text.`;
  */
 async function callClaudeForAnalysis(prompt: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    console.log('[SupervisorService] Spawning Claude Code for analysis...');
+    log.log(' Spawning Claude Code for analysis...');
 
     const executable = claudeBackend.getExecutablePath();
     // Use --print flag for one-shot execution (no interactive mode)
@@ -532,7 +747,7 @@ async function callClaudeForAnalysis(prompt: string): Promise<string> {
       '--no-session-persistence',
     ];
 
-    console.log(`[SupervisorService] Command: ${executable} ${args.join(' ')}`);
+    log.log(` Command: ${executable} ${args.join(' ')}`);
 
     const childProcess = spawn(executable, args, {
       env: {
@@ -576,14 +791,14 @@ async function callClaudeForAnalysis(prompt: string): Promise<string> {
           }
         } catch {
           // Not JSON, might be raw text
-          console.log('[SupervisorService] Non-JSON line:', line.substring(0, 100));
+          log.log(' Non-JSON line:', line.substring(0, 100));
         }
       }
     });
 
     childProcess.stderr?.on('data', (data: Buffer) => {
       const text = decoder.write(data);
-      console.error('[SupervisorService] stderr:', text);
+      log.error(' stderr:', text);
       if (text.toLowerCase().includes('error')) {
         hasError = true;
       }
@@ -607,7 +822,7 @@ async function callClaudeForAnalysis(prompt: string): Promise<string> {
         }
       }
 
-      console.log(`[SupervisorService] Claude Code exited with code ${code}, output length: ${textOutput.length}`);
+      log.log(` Claude Code exited with code ${code}, output length: ${textOutput.length}`);
 
       if (code !== 0 && textOutput.length === 0) {
         reject(new Error(`Claude Code exited with code ${code}`));
@@ -619,13 +834,13 @@ async function callClaudeForAnalysis(prompt: string): Promise<string> {
     });
 
     childProcess.on('error', (err) => {
-      console.error('[SupervisorService] Process spawn error:', err);
+      log.error(' Process spawn error:', err);
       reject(err);
     });
 
     // Send the prompt via stdin using stream-json format
     childProcess.on('spawn', () => {
-      console.log('[SupervisorService] Process spawned, sending prompt via stdin...');
+      log.log(' Process spawned, sending prompt via stdin...');
       const stdinMessage = JSON.stringify({
         type: 'user',
         message: {
@@ -701,8 +916,8 @@ function parseClaudeResponse(
       rawResponse: response,
     };
   } catch (err) {
-    console.error('[SupervisorService] Failed to parse Claude response:', err);
-    console.error('[SupervisorService] Raw response:', response);
+    log.error(' Failed to parse Claude response:', err);
+    log.error(' Raw response:', response);
 
     // Return fallback report
     return createFallbackReport(summaries);
@@ -747,7 +962,7 @@ function saveReportToHistory(report: SupervisorReport): void {
 
   // Persist to disk
   saveSupervisorHistory(supervisorHistory);
-  console.log(`[SupervisorService] Saved history entries for ${report.agentSummaries.length} agents`);
+  log.log(` Saved history entries for ${report.agentSummaries.length} agents`);
 }
 
 /**
@@ -763,7 +978,7 @@ export function getAgentSupervisorHistory(agentId: string): AgentSupervisorHisto
 export function deleteAgentHistory(agentId: string): void {
   deleteSupervisorHistory(supervisorHistory, agentId);
   saveSupervisorHistory(supervisorHistory);
-  console.log(`[SupervisorService] Deleted history for agent ${agentId}`);
+  log.log(` Deleted history for agent ${agentId}`);
 }
 
 // ============================================================================

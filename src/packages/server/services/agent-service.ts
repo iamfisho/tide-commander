@@ -13,6 +13,9 @@ import {
   loadToolHistory,
   searchSession,
 } from '../claude/session-loader.js';
+import { logger } from '../utils/logger.js';
+
+const log = logger.agent;
 
 // In-memory agent storage
 const agents = new Map<string, Agent>();
@@ -44,9 +47,9 @@ export function initAgents(): void {
       };
       agents.set(agent.id, agent);
     }
-    console.log(`[AgentService] Loaded ${agents.size} agents from ${getDataDir()}`);
+    log.log(` Loaded ${agents.size} agents from ${getDataDir()}`);
   } catch (err) {
-    console.error('[AgentService] Failed to load agents:', err);
+    log.error(' Failed to load agents:', err);
   }
 }
 
@@ -54,7 +57,7 @@ export function persistAgents(): void {
   try {
     saveAgents(Array.from(agents.values()));
   } catch (err) {
-    console.error('[AgentService] Failed to save agents:', err);
+    log.error(' Failed to save agents:', err);
   }
 }
 
@@ -126,7 +129,7 @@ export async function createAgent(
   agents.set(id, agent);
   persistAgents();
 
-  console.log(`[AgentService] Agent ${name} (${id}) created in ${cwd}`);
+  log.log(` Agent ${name} (${id}) created in ${cwd}`);
 
   emit('created', agent);
   return agent;
@@ -178,18 +181,18 @@ export async function getAgentSessions(agentId: string) {
 
 export async function getAgentHistory(agentId: string, limit: number = 50, offset: number = 0) {
   const agent = agents.get(agentId);
-  console.log(`[AgentService] getAgentHistory called for agentId=${agentId}, agent found: ${!!agent}`);
+  log.log(` getAgentHistory called for agentId=${agentId}, agent found: ${!!agent}`);
   if (!agent) return null;
 
-  console.log(`[AgentService] Agent ${agent.name} (${agentId}): sessionId=${agent.sessionId}, cwd=${agent.cwd}`);
+  log.log(` Agent ${agent.name} (${agentId}): sessionId=${agent.sessionId}, cwd=${agent.cwd}`);
 
   if (!agent.sessionId) {
-    console.log(`[AgentService] No sessionId for agent ${agentId}, returning empty`);
+    log.log(` No sessionId for agent ${agentId}, returning empty`);
     return { messages: [], sessionId: null, totalCount: 0, hasMore: false };
   }
 
   const history = await loadSession(agent.cwd, agent.sessionId, limit, offset);
-  console.log(`[AgentService] Loaded ${history?.messages.length || 0} messages for agent ${agentId} from session ${agent.sessionId}`);
+  log.log(` Loaded ${history?.messages.length || 0} messages for agent ${agentId} from session ${agent.sessionId}`);
   return {
     sessionId: agent.sessionId,
     messages: history?.messages || [],
@@ -229,7 +232,7 @@ export async function getAllToolHistory(limit: number = 100) {
       allToolExecutions.push(...toolExecutions);
       allFileChanges.push(...fileChanges);
     } catch (err) {
-      console.error(`[AgentService] Failed to load tool history for ${agent.name}:`, err);
+      log.error(` Failed to load tool history for ${agent.name}:`, err);
     }
   }
 

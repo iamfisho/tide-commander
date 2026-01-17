@@ -260,6 +260,15 @@ function handleServerMessage(message: ServerMessage): void {
       break;
     }
 
+    case 'agent_analysis': {
+      const { agentId, analysis } = message.payload as {
+        agentId: string;
+        analysis: import('../../shared/types').AgentAnalysis;
+      };
+      store.addAgentAnalysis(agentId, analysis);
+      break;
+    }
+
     case 'areas_update': {
       const areasArray = message.payload as import('../../shared/types').DrawingArea[];
       store.setAreasFromServer(areasArray);

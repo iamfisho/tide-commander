@@ -13,6 +13,9 @@ import type {
   StandardEvent,
 } from './types.js';
 import { ClaudeBackend } from './backend.js';
+import { createLogger } from '../utils/logger.js';
+
+const log = createLogger('Runner');
 
 export class ClaudeRunner {
   private backend: CLIBackend;
@@ -45,8 +48,8 @@ export class ClaudeRunner {
     // Get executable path
     const executable = this.backend.getExecutablePath();
 
-    console.log(`[ClaudeRunner] Starting: ${executable} ${args.join(' ')}`);
-    console.log(`[ClaudeRunner] Working dir: ${workingDir}`);
+    log.log(` Starting: ${executable} ${args.join(' ')}`);
+    log.log(` Working dir: ${workingDir}`);
 
     // Spawn process with its own process group (detached: true)
     // This allows us to kill the entire process tree when stopping
@@ -78,26 +81,26 @@ export class ClaudeRunner {
 
     // Handle process exit
     childProcess.on('close', (code, signal) => {
-      console.log(`[ClaudeRunner] Process exited for ${agentId} with code=${code} signal=${signal}`);
+      log.log(` Process exited for ${agentId} with code=${code} signal=${signal}`);
       this.activeProcesses.delete(agentId);
       this.callbacks.onComplete(agentId, code === 0);
     });
 
     childProcess.on('error', (err) => {
-      console.error(`[ClaudeRunner] Process spawn error for ${agentId}:`, err);
+      log.error(` Process spawn error for ${agentId}:`, err);
       this.activeProcesses.delete(agentId);
       this.callbacks.onError(agentId, err.message);
     });
 
     // Log process start
     childProcess.on('spawn', () => {
-      console.log(`[ClaudeRunner] Process spawned for ${agentId} (pid: ${childProcess.pid})`);
+      log.log(` Process spawned for ${agentId} (pid: ${childProcess.pid})`);
     });
 
     // Send the prompt via stdin (keep stdin open for additional messages)
     if (this.backend.requiresStdinInput()) {
       const stdinInput = this.backend.formatStdinInput(prompt);
-      console.log(`[ClaudeRunner] Sending stdin: ${stdinInput.substring(0, 100)}...`);
+      log.log(` Sending stdin: ${stdinInput.substring(0, 100)}...`);
       childProcess.stdin?.write(stdinInput + '\n');
       // Don't close stdin - allow sending additional messages
     }
@@ -110,12 +113,12 @@ export class ClaudeRunner {
   sendMessage(agentId: string, message: string): boolean {
     const activeProcess = this.activeProcesses.get(agentId);
     if (!activeProcess || !activeProcess.process.stdin?.writable) {
-      console.log(`[ClaudeRunner] No writable stdin for agent ${agentId}`);
+      log.log(` No writable stdin for agent ${agentId}`);
       return false;
     }
 
     const stdinInput = this.backend.formatStdinInput(message);
-    console.log(`[ClaudeRunner] Sending additional message to ${agentId}: ${stdinInput.substring(0, 100)}...`);
+    log.log(` Sending additional message to ${agentId}: ${stdinInput.substring(0, 100)}...`);
     activeProcess.process.stdin.write(stdinInput + '\n');
     return true;
   }
@@ -160,7 +163,7 @@ export class ClaudeRunner {
 
       // Log result events for debugging context tracking
       if (rawEvent.type === 'result') {
-        console.log(`[ClaudeRunner] Got result event for ${agentId}:`, JSON.stringify(rawEvent).substring(0, 500));
+        log.log(` Got result event for ${agentId}:`, JSON.stringify(rawEvent).substring(0, 500));
       }
 
       // Extract session ID if present
@@ -265,7 +268,7 @@ export class ClaudeRunner {
 
     process.stderr?.on('data', (data: Buffer) => {
       const text = decoder.write(data);
-      console.error(`[ClaudeRunner] stderr for ${agentId}:`, text);
+      log.error(` stderr for ${agentId}:`, text);
       // Don't treat all stderr as errors - some is just logging
       if (text.toLowerCase().includes('error')) {
         this.callbacks.onError(agentId, text);
@@ -280,7 +283,7 @@ export class ClaudeRunner {
     const activeProcess = this.activeProcesses.get(agentId);
     if (activeProcess) {
       const pid = activeProcess.process.pid;
-      console.log(`[ClaudeRunner] Stopping process for ${agentId} (pid: ${pid})`);
+      log.log(` Stopping process for ${agentId} (pid: ${pid})`);
 
       // Remove from tracking immediately
       this.activeProcesses.delete(agentId);
@@ -290,10 +293,10 @@ export class ClaudeRunner {
         try {
           // Kill the entire process group
           process.kill(-pid, 'SIGTERM');
-          console.log(`[ClaudeRunner] Sent SIGTERM to process group ${pid}`);
+          log.log(` Sent SIGTERM to process group ${pid}`);
         } catch (e) {
           // Process group kill failed, try direct kill
-          console.log(`[ClaudeRunner] Process group kill failed, trying direct kill`);
+          log.log(` Process group kill failed, trying direct kill`);
         }
       }
 
@@ -311,7 +314,7 @@ export class ClaudeRunner {
       setTimeout(() => {
         try {
           if (pid && !activeProcess.process.killed) {
-            console.log(`[ClaudeRunner] Force killing process ${pid} with SIGKILL`);
+            log.log(` Force killing process ${pid} with SIGKILL`);
             process.kill(-pid, 'SIGKILL');
             activeProcess.process.kill('SIGKILL');
           }

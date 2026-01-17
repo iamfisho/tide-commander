@@ -10,6 +10,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import * as readline from 'readline';
+import { createLogger } from '../utils/logger.js';
+
+const log = createLogger('Session');
 
 // Claude's project directory
 const CLAUDE_DIR = path.join(os.homedir(), '.claude');
@@ -140,7 +143,7 @@ export async function loadSession(
   const sessionFile = path.join(projectDir, `${sessionId}.jsonl`);
 
   if (!fs.existsSync(sessionFile)) {
-    console.log(`[SessionLoader] Session file not found: ${sessionFile}`);
+    log.log(` Session file not found: ${sessionFile}`);
     return null;
   }
 
@@ -504,7 +507,7 @@ export async function getSessionActivityStatus(
       }
     }
   } catch (err) {
-    console.error(`[SessionLoader] Error reading session file for activity check:`, err);
+    log.error(` Error reading session file for activity check:`, err);
   }
 
   // Determine if work is pending based on last message type:
@@ -568,7 +571,7 @@ export async function isClaudeProcessRunningInCwd(cwd: string): Promise<boolean>
         // Normalize and compare
         const normalizedProcessCwd = processCwd.replace(/\/+$/, '');
         if (normalizedProcessCwd === normalizedCwd) {
-          console.log(`[SessionLoader] Found Claude process ${pid} running in ${cwd}`);
+          log.log(` Found Claude process ${pid} running in ${cwd}`);
           return true;
         }
       } catch {
@@ -578,7 +581,7 @@ export async function isClaudeProcessRunningInCwd(cwd: string): Promise<boolean>
 
     return false;
   } catch (err) {
-    console.error('[SessionLoader] Error checking for Claude processes:', err);
+    log.error(' Error checking for Claude processes:', err);
     return false;
   }
 }

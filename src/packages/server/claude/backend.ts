@@ -12,6 +12,9 @@ import type {
   StandardEvent,
   ClaudeRawEvent,
 } from './types.js';
+import { createLogger } from '../utils/logger.js';
+
+const log = createLogger('Backend');
 
 export class ClaudeBackend implements CLIBackend {
   readonly name = 'claude';
@@ -146,7 +149,7 @@ export class ClaudeBackend implements CLIBackend {
   }
 
   private parseResultEvent(event: ClaudeRawEvent): StandardEvent {
-    console.log(`[ClaudeBackend] parseResultEvent: usage=${JSON.stringify(event.usage)}, cost=${event.total_cost_usd}`);
+    log.log(`parseResultEvent: usage=${JSON.stringify(event.usage)}, cost=${event.total_cost_usd}`);
     return {
       type: 'step_complete',
       durationMs: event.duration_ms,

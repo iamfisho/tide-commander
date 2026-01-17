@@ -1,3 +1,4 @@
+@use 'sass:color';
 @use '../variables' as *;
 
 .supervisor-panel-overlay {
@@ -276,7 +277,7 @@
     transition: background $transition-fast;
 
     &:hover:not(:disabled) {
-      background: lighten($accent-blue, 5%);
+      background: color.adjust($accent-blue, $lightness: 5%);
     }
 
     &:disabled {

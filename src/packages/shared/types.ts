@@ -389,6 +389,14 @@ export interface AgentSupervisorHistoryMessage extends WSMessage {
   payload: AgentSupervisorHistory;
 }
 
+export interface AgentAnalysisMessage extends WSMessage {
+  type: 'agent_analysis';
+  payload: {
+    agentId: string;
+    analysis: AgentAnalysis;
+  };
+}
+
 // Supervisor WebSocket messages (Client -> Server)
 export interface SetSupervisorConfigMessage extends WSMessage {
   type: 'set_supervisor_config';
@@ -423,6 +431,7 @@ export type ServerMessage =
   | SupervisorStatusMessage
   | NarrativeUpdateMessage
   | AgentSupervisorHistoryMessage
+  | AgentAnalysisMessage
   | AreasUpdateMessage;
 
 export type ClientMessage =

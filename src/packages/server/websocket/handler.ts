@@ -9,6 +9,10 @@ import * as fs from 'fs';
 import type { Agent, ClientMessage, ServerMessage, DrawingArea } from '../../shared/types.js';
 import { agentService, claudeService, supervisorService } from '../services/index.js';
 import { loadAreas, saveAreas } from '../data/index.js';
+import { logger, createLogger } from '../utils/logger.js';
+
+const log = logger.ws;
+const supervisorLog = createLogger('Supervisor');
 
 // Connected clients
 const clients = new Set<WebSocket>();
@@ -44,7 +48,7 @@ function sendActivity(agentId: string, message: string): void {
 // ============================================================================
 
 function handleClientMessage(ws: WebSocket, message: ClientMessage): void {
-  console.log(`[WebSocket] Received: ${message.type}`);
+  log.log(` Received: ${message.type}`);
 
   switch (message.type) {
     case 'spawn_agent':
@@ -65,7 +69,7 @@ function handleClientMessage(ws: WebSocket, message: ClientMessage): void {
           sendActivity(agent.id, `${agent.name} deployed`);
         })
         .catch((err) => {
-          console.error('[WebSocket] Failed to spawn agent:', err);
+          log.error(' Failed to spawn agent:', err);
           // Check if this is a directory not found error
           if (err.message?.includes('Directory does not exist')) {
             ws.send(
@@ -93,7 +97,7 @@ function handleClientMessage(ws: WebSocket, message: ClientMessage): void {
       claudeService
         .sendCommand(message.payload.agentId, message.payload.command)
         .catch((err) => {
-          console.error('[WebSocket] Failed to send command:', err);
+          log.error(' Failed to send command:', err);
           sendActivity(message.payload.agentId, `Error: ${err.message}`);
         });
       break;
@@ -139,7 +143,7 @@ function handleClientMessage(ws: WebSocket, message: ClientMessage): void {
       try {
         // Create directory recursively
         fs.mkdirSync(message.payload.path, { recursive: true });
-        console.log(`[WebSocket] Created directory: ${message.payload.path}`);
+        log.log(` Created directory: ${message.payload.path}`);
 
         // Now spawn the agent
         agentService
@@ -156,7 +160,7 @@ function handleClientMessage(ws: WebSocket, message: ClientMessage): void {
             sendActivity(agent.id, `${agent.name} deployed`);
           })
           .catch((err) => {
-            console.error('[WebSocket] Failed to spawn agent after creating directory:', err);
+            log.error(' Failed to spawn agent after creating directory:', err);
             ws.send(
               JSON.stringify({
                 type: 'error',
@@ -165,7 +169,7 @@ function handleClientMessage(ws: WebSocket, message: ClientMessage): void {
             );
           });
       } catch (err: any) {
-        console.error('[WebSocket] Failed to create directory:', err);
+        log.error(' Failed to create directory:', err);
         ws.send(
           JSON.stringify({
             type: 'error',
@@ -180,7 +184,7 @@ function handleClientMessage(ws: WebSocket, message: ClientMessage): void {
       break;
 
     case 'request_supervisor_report':
-      console.log('[Supervisor] Report requested by frontend');
+      supervisorLog.log('Report requested by frontend');
       supervisorService
         .generateReport()
         .then((report) => {
@@ -192,7 +196,7 @@ function handleClientMessage(ws: WebSocket, message: ClientMessage): void {
           );
         })
         .catch((err) => {
-          console.error('[WebSocket] Supervisor report failed:', err);
+          log.error(' Supervisor report failed:', err);
           ws.send(
             JSON.stringify({
               type: 'error',
@@ -217,7 +221,7 @@ function handleClientMessage(ws: WebSocket, message: ClientMessage): void {
     case 'sync_areas':
       // Save areas to persistent storage and broadcast to all clients
       saveAreas(message.payload);
-      console.log(`[WebSocket] Saved ${message.payload.length} areas`);
+      log.log(` Saved ${message.payload.length} areas`);
       // Broadcast to all other clients
       for (const client of clients) {
         if (client !== ws && client.readyState === WebSocket.OPEN) {
@@ -315,7 +319,7 @@ function setupServiceListeners(): void {
         break;
       case 'updated':
         const updatedAgent = data as Agent;
-        console.log(`[WebSocket] Broadcasting agent_updated: ${updatedAgent.id} name=${updatedAgent.name} status=${updatedAgent.status}, contextUsed=${updatedAgent.contextUsed}, tokensUsed=${updatedAgent.tokensUsed}, clients=${clients.size}`);
+        log.log(` Broadcasting agent_updated: ${updatedAgent.id} name=${updatedAgent.name} status=${updatedAgent.status}, contextUsed=${updatedAgent.contextUsed}, tokensUsed=${updatedAgent.tokensUsed}, clients=${clients.size}`);
         broadcast({
           type: 'agent_updated',
           payload: updatedAgent,
@@ -395,6 +399,13 @@ function setupServiceListeners(): void {
           payload: data,
         } as ServerMessage);
         break;
+      case 'agent_analysis':
+        // Single agent analysis update
+        broadcast({
+          type: 'agent_analysis',
+          payload: data,
+        } as ServerMessage);
+        break;
       case 'narrative':
         broadcast({
           type: 'narrative_update',
@@ -419,7 +430,7 @@ export function init(server: HttpServer): WebSocketServer {
   const wss = new WebSocketServer({ server, path: '/ws' });
 
   wss.on('connection', async (ws) => {
-    console.log('[WebSocket] Client connected');
+    log.log(' Client connected');
     clients.add(ws);
 
     // Sync agent status with actual process state before sending to client
@@ -428,7 +439,7 @@ export function init(server: HttpServer): WebSocketServer {
 
     // Send current state
     const agents = agentService.getAllAgents();
-    console.log(`[WebSocket] Sending initial agents_update with ${agents.length} agents:`);
+    log.log(` Sending initial agents_update with ${agents.length} agents:`);
     for (const agent of agents) {
       console.log(`  - ${agent.name}: status=${agent.status}`);
     }
@@ -442,7 +453,7 @@ export function init(server: HttpServer): WebSocketServer {
 
     // Send current areas
     const areas = loadAreas();
-    console.log(`[WebSocket] Sending initial areas_update with ${areas.length} areas`);
+    log.log(` Sending initial areas_update with ${areas.length} areas`);
     ws.send(
       JSON.stringify({
         type: 'areas_update',
@@ -455,12 +466,12 @@ export function init(server: HttpServer): WebSocketServer {
         const message = JSON.parse(data.toString()) as ClientMessage;
         handleClientMessage(ws, message);
       } catch (err) {
-        console.error('[WebSocket] Invalid message:', err);
+        log.error(' Invalid message:', err);
       }
     });
 
     ws.on('close', () => {
-      console.log('[WebSocket] Client disconnected');
+      log.log(' Client disconnected');
       clients.delete(ws);
     });
   });
@@ -468,6 +479,6 @@ export function init(server: HttpServer): WebSocketServer {
   // Set up service event listeners
   setupServiceListeners();
 
-  console.log('[WebSocket] Handler initialized');
+  log.log(' Handler initialized');
   return wss;
 }

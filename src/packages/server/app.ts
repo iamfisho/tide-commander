@@ -8,6 +8,7 @@ import cors from 'cors';
 import path from 'path';
 import os from 'os';
 import routes from './routes/index.js';
+import { logger } from './utils/logger.js';
 
 // Temp directory for uploads (same as in files.ts)
 const UPLOADS_DIR = path.join(os.tmpdir(), 'tide-commander-uploads');
@@ -21,7 +22,7 @@ export function createApp(): Express {
 
   // Request logging
   app.use((req: Request, _res: Response, next: NextFunction) => {
-    console.log(`[HTTP] ${req.method} ${req.path}`);
+    logger.http.log(`${req.method} ${req.path}`);
     next();
   });
 
@@ -38,7 +39,7 @@ export function createApp(): Express {
 
   // Error handler
   app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-    console.error('[HTTP] Error:', err);
+    logger.http.error('Request error:', err.message);
     res.status(500).json({ error: 'Internal server error' });
   });
 

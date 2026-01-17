@@ -8,6 +8,7 @@ import { createApp } from './app.js';
 import { agentService, claudeService, supervisorService } from './services/index.js';
 import * as websocket from './websocket/handler.js';
 import { getDataDir } from './data/index.js';
+import { logger } from './utils/logger.js';
 
 // Configuration
 const PORT = process.env.PORT || 5174;
@@ -18,7 +19,7 @@ async function main(): Promise<void> {
   claudeService.init();
   supervisorService.init();
 
-  console.log(`[Tide] Data directory: ${getDataDir()}`);
+  logger.server.log(`Data directory: ${getDataDir()}`);
 
   // Create Express app and HTTP server
   const app = createApp();
@@ -29,14 +30,14 @@ async function main(): Promise<void> {
 
   // Start server
   server.listen(PORT, () => {
-    console.log(`[Tide] Server running on http://localhost:${PORT}`);
-    console.log(`[Tide] WebSocket available at ws://localhost:${PORT}/ws`);
-    console.log(`[Tide] API available at http://localhost:${PORT}/api`);
+    logger.server.log(`Server running on http://localhost:${PORT}`);
+    logger.server.log(`WebSocket available at ws://localhost:${PORT}/ws`);
+    logger.server.log(`API available at http://localhost:${PORT}/api`);
   });
 
   // Graceful shutdown
   process.on('SIGINT', async () => {
-    console.log('\n[Tide] Shutting down...');
+    logger.server.warn('Shutting down...');
     supervisorService.shutdown();
     await claudeService.shutdown();
     agentService.persistAgents();
