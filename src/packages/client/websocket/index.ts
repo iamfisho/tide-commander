@@ -4,6 +4,9 @@ import { store } from '../store';
 let ws: WebSocket | null = null;
 let connectionPromise: Promise<void> | null = null;
 let isConnecting = false;
+let reconnectAttempts = 0;
+let maxReconnectAttempts = 10;
+let reconnectTimeout: NodeJS.Timeout | null = null;
 let onToast: ((type: 'error' | 'success' | 'warning' | 'info', title: string, message: string) => void) | null = null;
 let onAgentCreated: ((agent: Agent) => void) | null = null;
 let onAgentUpdated: ((agent: Agent, positionChanged: boolean) => void) | null = null;
@@ -37,53 +40,122 @@ export function setCallbacks(callbacks: {
 }
 
 export function connect(): void {
+  // Clear any pending reconnect
+  if (reconnectTimeout) {
+    clearTimeout(reconnectTimeout);
+    reconnectTimeout = null;
+  }
+
   // Prevent duplicate connection attempts
   if (isConnecting || (ws && ws.readyState === WebSocket.CONNECTING)) {
-    console.log('[Tide] Connection already in progress, skipping');
+    console.log('[WebSocket] Connection already in progress, skipping');
+    console.log('[WebSocket] Current state:', ws?.readyState, '(0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED)');
     return;
   }
 
   if (ws && ws.readyState === WebSocket.OPEN) {
-    console.log('[Tide] Already connected, skipping');
+    console.log('[WebSocket] Already connected, skipping');
     return;
   }
 
+  reconnectAttempts++;
   isConnecting = true;
+
+  // Try different URLs based on environment
   const wsUrl = `ws://${window.location.hostname}:5174/ws`;
-  console.log('[Tide] Connecting to', wsUrl);
+  const altUrl = `ws://localhost:5174/ws`;
+  const url127 = `ws://127.0.0.1:5174/ws`;
 
-  ws = new WebSocket(wsUrl);
+  console.log(`[WebSocket] Connection attempt #${reconnectAttempts}`);
+  console.log('[WebSocket] Primary URL:', wsUrl);
+  console.log('[WebSocket] Alternative URL:', altUrl);
+  console.log('[WebSocket] Fallback URL:', url127);
+  console.log('[WebSocket] Window location:', window.location.hostname);
 
-  ws.onopen = () => {
-    console.log('[Tide] Connected');
+  try {
+    ws = new WebSocket(wsUrl);
+    console.log('[WebSocket] WebSocket object created, waiting for connection...');
+  } catch (error) {
+    console.error('[WebSocket] Failed to create WebSocket:', error);
     isConnecting = false;
+
+    // Try alternative URL
+    if (wsUrl !== altUrl) {
+      console.log('[WebSocket] Trying alternative URL:', altUrl);
+      try {
+        ws = new WebSocket(altUrl);
+      } catch (err2) {
+        console.error('[WebSocket] Alternative URL also failed:', err2);
+        handleReconnect();
+        return;
+      }
+    } else {
+      handleReconnect();
+      return;
+    }
+  }
+
+  // At this point, ws is guaranteed to be non-null since we return early in failure cases
+  const socket = ws;
+
+  socket.onopen = () => {
+    console.log('[WebSocket] ✅ Connected successfully!');
+    console.log('[WebSocket] ReadyState:', ws?.readyState);
+    isConnecting = false;
+    reconnectAttempts = 0; // Reset on successful connection
     store.setConnected(true);
     // Start status polling as fallback for missed WebSocket updates
     store.startStatusPolling();
     onToast?.('success', 'Connected', 'Connected to Tide Commander server');
   };
 
-  ws.onmessage = (event) => {
+  socket.onmessage = (event) => {
+    console.log('[WebSocket] Received message from server:', event.data.substring(0, 200));
     try {
       const message = JSON.parse(event.data) as ServerMessage;
+      console.log('[WebSocket] Parsed message type:', message.type);
       handleServerMessage(message);
     } catch (err) {
-      console.error('[Tide] Failed to parse message:', err);
+      console.error('[Tide] Failed to parse message:', err, 'Raw data:', event.data);
     }
   };
 
-  ws.onclose = () => {
-    console.log('[Tide] Disconnected, reconnecting...');
+  socket.onclose = (event) => {
+    console.log('[WebSocket] Connection closed:', {
+      code: event.code,
+      reason: event.reason,
+      wasClean: event.wasClean
+    });
     isConnecting = false;
     ws = null;
     store.setConnected(false);
     store.stopStatusPolling();
-    onToast?.('warning', 'Disconnected', 'Connection lost. Reconnecting...');
-    setTimeout(connect, 2000);
+
+    if (reconnectAttempts < maxReconnectAttempts) {
+      onToast?.('warning', 'Disconnected', `Connection lost. Reconnecting... (attempt ${reconnectAttempts + 1}/${maxReconnectAttempts})`);
+      handleReconnect();
+    } else {
+      onToast?.('error', 'Connection Failed', 'Could not connect to server. Please check if the backend is running on port 5174.');
+    }
   };
 
-  ws.onerror = (err) => {
-    console.error('[Tide] WebSocket error:', err);
+  socket.onerror = (event) => {
+    console.error('[WebSocket] ❌ Error occurred:', event);
+    console.error('[WebSocket] Error details:', {
+      type: event.type,
+      target: event.target,
+      currentTarget: event.currentTarget,
+      // @ts-ignore
+      message: event.message || 'Unknown error'
+    });
+
+    // Common issues on Mac
+    console.log('[WebSocket] Troubleshooting tips:');
+    console.log('  1. Check if backend is running: npm run dev:server');
+    console.log('  2. Check if port 5174 is available: lsof -i :5174');
+    console.log('  3. Check firewall settings');
+    console.log('  4. Try: curl http://localhost:5174/api/status');
+
     isConnecting = false;
   };
 
@@ -105,10 +177,18 @@ function handleServerMessage(message: ServerMessage): void {
 
     case 'agent_created': {
       const newAgent = message.payload as Agent;
+      console.log('[WebSocket] Agent created:', newAgent);
       store.addAgent(newAgent);
       store.selectAgent(newAgent.id);
       onAgentCreated?.(newAgent);
       onSpawnSuccess?.();
+
+      // Call global handler if it exists (for SpawnModal)
+      if ((window as any).__spawnModalSuccess) {
+        console.log('[WebSocket] Calling __spawnModalSuccess');
+        (window as any).__spawnModalSuccess();
+      }
+
       onToast?.('success', 'Agent Deployed', `${newAgent.name} is ready for commands`);
       break;
     }
@@ -200,14 +280,28 @@ function handleServerMessage(message: ServerMessage): void {
 
     case 'error': {
       const errorPayload = message.payload as { message: string };
+      console.error('[WebSocket] Error from server:', errorPayload.message);
       onToast?.('error', 'Error', errorPayload.message);
       onSpawnError?.();
+
+      // Call global handler if it exists (for SpawnModal)
+      if ((window as any).__spawnModalError) {
+        console.log('[WebSocket] Calling __spawnModalError');
+        (window as any).__spawnModalError();
+      }
       break;
     }
 
     case 'directory_not_found': {
       const { path } = message.payload as { path: string };
+      console.log('[WebSocket] Directory not found:', path);
       onDirectoryNotFound?.(path);
+
+      // Call global handler if it exists (for SpawnModal)
+      if ((window as any).__spawnModalDirNotFound) {
+        console.log('[WebSocket] Calling __spawnModalDirNotFound');
+        (window as any).__spawnModalDirNotFound(path);
+      }
       break;
     }
 
@@ -375,9 +469,47 @@ function handleServerMessage(message: ServerMessage): void {
   }
 }
 
+// Helper function to handle reconnection
+function handleReconnect(): void {
+  const delay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 30000); // Exponential backoff, max 30s
+  console.log(`[WebSocket] Will retry in ${delay}ms...`);
+  reconnectTimeout = setTimeout(connect, delay);
+}
+
 export function sendMessage(message: ClientMessage): void {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(message));
+  console.log('[WebSocket] sendMessage called with:', message);
+
+  if (!ws) {
+    console.error('[WebSocket] WebSocket is null - not connected!');
+    console.log('[WebSocket] Attempting to reconnect...');
+    connect(); // Try to connect
+    onToast?.('error', 'Not Connected', 'Connecting to server... Please try again in a moment.');
+    return;
+  }
+
+  if (ws.readyState !== WebSocket.OPEN) {
+    const stateNames = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
+    const stateName = stateNames[ws.readyState] || 'UNKNOWN';
+    console.error('[WebSocket] WebSocket state is not OPEN, state:', ws.readyState, `(${stateName})`);
+
+    if (ws.readyState === WebSocket.CONNECTING) {
+      onToast?.('warning', 'Connecting...', 'WebSocket is still connecting. Please wait a moment and try again.');
+    } else if (ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+      console.log('[WebSocket] Attempting to reconnect...');
+      connect();
+      onToast?.('warning', 'Reconnecting...', 'Connection lost. Reconnecting to server...');
+    }
+    return;
+  }
+
+  try {
+    const messageStr = JSON.stringify(message);
+    console.log('[WebSocket] Sending message to server:', messageStr);
+    ws.send(messageStr);
+    console.log('[WebSocket] Message sent successfully');
+  } catch (error) {
+    console.error('[WebSocket] Failed to send message:', error);
+    onToast?.('error', 'Send Failed', `Failed to send message: ${error}`);
   }
 }
 

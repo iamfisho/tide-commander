@@ -632,11 +632,31 @@ class Store {
     useChrome?: boolean,
     permissionMode?: PermissionMode
   ): void {
-    const pos3d = position ? { x: position.x, y: 0, z: position.z } : undefined;
-    this.sendMessage?.({
-      type: 'spawn_agent',
-      payload: { name, class: agentClass, cwd, position: pos3d, sessionId, useChrome, permissionMode },
+    console.log('[Store] spawnAgent called with:', {
+      name,
+      agentClass,
+      cwd,
+      position,
+      sessionId,
+      useChrome,
+      permissionMode
     });
+
+    const pos3d = position ? { x: position.x, y: 0, z: position.z } : undefined;
+    const message = {
+      type: 'spawn_agent' as const,
+      payload: { name, class: agentClass, cwd, position: pos3d, sessionId, useChrome, permissionMode },
+    };
+
+    console.log('[Store] Sending WebSocket message:', message);
+
+    if (!this.sendMessage) {
+      console.error('[Store] sendMessage is not defined! WebSocket may not be connected');
+      return;
+    }
+
+    this.sendMessage(message);
+    console.log('[Store] Message sent to WebSocket');
   }
 
   createDirectoryAndSpawn(path: string, name: string, agentClass: AgentClass): void {

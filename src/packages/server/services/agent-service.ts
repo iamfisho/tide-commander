@@ -101,12 +101,25 @@ export async function createAgent(
   useChrome?: boolean,
   permissionMode: PermissionMode = 'bypass'
 ): Promise<Agent> {
+  log.log('🎆 [CREATE_AGENT] Starting agent creation:', {
+    name,
+    agentClass,
+    cwd,
+    sessionId,
+    useChrome,
+    permissionMode,
+  });
+
   const id = generateId();
+  log.log(`  Generated ID: ${id}`);
 
   // Validate cwd
+  log.log(`  Validating directory: ${cwd}`);
   if (!fs.existsSync(cwd)) {
+    log.error(`  ❌ Directory does not exist: ${cwd}`);
     throw new Error(`Directory does not exist: ${cwd}`);
   }
+  log.log(`  ✅ Directory exists`);
 
   // Create agent object
   // SessionId can be provided to link to an existing Claude session
@@ -134,12 +147,28 @@ export async function createAgent(
     sessionId: sessionId,
   };
 
-  agents.set(id, agent);
-  persistAgents();
+  log.log('  Agent object created:', {
+    id: agent.id,
+    name: agent.name,
+    tmuxSession: agent.tmuxSession,
+  });
 
-  log.log(` Agent ${name} (${id}) created in ${cwd}`);
+  agents.set(id, agent);
+  log.log(`  Agent added to memory store (total agents: ${agents.size})`);
+
+  try {
+    persistAgents();
+    log.log('  ✅ Agent persisted to disk');
+  } catch (err) {
+    log.error('  ⚠️ Failed to persist agent:', err);
+    // Don't throw - agent is still created in memory
+  }
+
+  log.log(`✅ Agent ${name} (${id}) created successfully in ${cwd}`);
 
   emit('created', agent);
+  log.log('  Event emitted: created');
+
   return agent;
 }
 

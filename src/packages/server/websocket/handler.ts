@@ -28,11 +28,23 @@ const lastBossCommands = new Map<string, string>();
 
 export function broadcast(message: ServerMessage): void {
   const data = JSON.stringify(message);
+  log.log(`📡 [BROADCAST] Sending ${message.type} to ${clients.size} clients`);
+
+  let sentCount = 0;
   for (const client of clients) {
     if (client.readyState === WebSocket.OPEN) {
-      client.send(data);
+      try {
+        client.send(data);
+        sentCount++;
+      } catch (err) {
+        log.error(`  Failed to send to client:`, err);
+      }
+    } else {
+      log.log(`  Skipping client with readyState: ${client.readyState}`);
     }
   }
+
+  log.log(`  Successfully sent to ${sentCount}/${clients.size} clients`);
 }
 
 function sendActivity(agentId: string, message: string): void {
@@ -88,6 +100,16 @@ function handleClientMessage(ws: WebSocket, message: ClientMessage): void {
 
   switch (message.type) {
     case 'spawn_agent':
+      log.log('🚀 [SPAWN_AGENT] Request received:', {
+        name: message.payload.name,
+        class: message.payload.class,
+        cwd: message.payload.cwd,
+        sessionId: message.payload.sessionId,
+        useChrome: message.payload.useChrome,
+        permissionMode: message.payload.permissionMode,
+        position: message.payload.position,
+      });
+
       agentService
         .createAgent(
           message.payload.name,
@@ -99,33 +121,50 @@ function handleClientMessage(ws: WebSocket, message: ClientMessage): void {
           message.payload.permissionMode
         )
         .then((agent) => {
-          broadcast({
-            type: 'agent_created',
-            payload: agent,
+          log.log('✅ [SPAWN_AGENT] Agent created successfully:', {
+            id: agent.id,
+            name: agent.name,
+            class: agent.class,
+            sessionId: agent.sessionId,
           });
+
+          const createMessage = {
+            type: 'agent_created' as const,
+            payload: agent,
+          };
+          log.log('📤 [SPAWN_AGENT] Broadcasting agent_created message');
+          broadcast(createMessage);
+
+          log.log('📤 [SPAWN_AGENT] Sending activity message');
           sendActivity(agent.id, `${agent.name} deployed`);
         })
         .catch((err) => {
-          log.error(' Failed to spawn agent:', err);
+          log.error('❌ [SPAWN_AGENT] Failed to spawn agent:', err);
+          log.error('   Error details:', {
+            message: err.message,
+            stack: err.stack,
+            name: err.name,
+          });
+
           // Check if this is a directory not found error
           if (err.message?.includes('Directory does not exist')) {
-            ws.send(
-              JSON.stringify({
-                type: 'directory_not_found',
-                payload: {
-                  path: message.payload.cwd,
-                  name: message.payload.name,
-                  class: message.payload.class,
-                },
-              })
-            );
+            const dirNotFoundMsg = {
+              type: 'directory_not_found',
+              payload: {
+                path: message.payload.cwd,
+                name: message.payload.name,
+                class: message.payload.class,
+              },
+            };
+            log.log('📤 [SPAWN_AGENT] Sending directory_not_found message');
+            ws.send(JSON.stringify(dirNotFoundMsg));
           } else {
-            ws.send(
-              JSON.stringify({
-                type: 'error',
-                payload: { message: err.message },
-              })
-            );
+            const errorMsg = {
+              type: 'error',
+              payload: { message: err.message },
+            };
+            log.log('📤 [SPAWN_AGENT] Sending error message:', errorMsg);
+            ws.send(JSON.stringify(errorMsg));
           }
         });
       break;
@@ -1263,8 +1302,10 @@ export function init(server: HttpServer): WebSocketServer {
   const wss = new WebSocketServer({ server, path: '/ws' });
 
   wss.on('connection', async (ws) => {
-    log.log(' Client connected');
+    log.log('🔗 [CONNECTION] New client connected');
+    log.log(`  Total clients: ${clients.size + 1}`);
     clients.add(ws);
+    log.log(`  Client added to set`);
 
     // Sync agent status with actual process state before sending to client
     // This only corrects 'working' -> 'idle' if the process is dead
@@ -1319,17 +1360,22 @@ export function init(server: HttpServer): WebSocketServer {
     }
 
     ws.on('message', (data) => {
+      const dataStr = data.toString();
+      log.log('📨 [MESSAGE] Received from client:', dataStr.substring(0, 200));
       try {
-        const message = JSON.parse(data.toString()) as ClientMessage;
+        const message = JSON.parse(dataStr) as ClientMessage;
+        log.log(`  Message type: ${message.type}`);
         handleClientMessage(ws, message);
       } catch (err) {
-        log.error(' Invalid message:', err);
+        log.error('❌ Invalid message:', err);
+        log.error('  Raw data:', dataStr);
       }
     });
 
     ws.on('close', () => {
-      log.log(' Client disconnected');
+      log.log('🔴 [DISCONNECT] Client disconnected');
       clients.delete(ws);
+      log.log(`  Remaining clients: ${clients.size}`);
     });
   });
 

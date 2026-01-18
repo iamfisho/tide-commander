@@ -101,6 +101,7 @@ export function SpawnModal({ isOpen, onClose, onSpawnStart, onSpawnEnd }: SpawnM
   }, [isOpen, agents]);
 
   const handleSpawn = () => {
+    console.log('[SpawnModal] handleSpawn called');
     setHasError(false);
 
     // If a session is selected, use its project path as cwd
@@ -108,13 +109,22 @@ export function SpawnModal({ isOpen, onClose, onSpawnStart, onSpawnEnd }: SpawnM
       ? sessions.find(s => s.sessionId === selectedSessionId)?.projectPath || cwd
       : cwd;
 
+    console.log('[SpawnModal] Effective CWD:', effectiveCwd);
+    console.log('[SpawnModal] Agent name:', name);
+    console.log('[SpawnModal] Agent class:', selectedClass);
+    console.log('[SpawnModal] Permission mode:', permissionMode);
+    console.log('[SpawnModal] Use Chrome:', useChrome);
+    console.log('[SpawnModal] Session ID:', selectedSessionId || 'none');
+
     if (!effectiveCwd.trim()) {
+      console.error('[SpawnModal] Empty CWD, showing error');
       setHasError(true);
       return;
     }
 
     if (!name.trim()) {
       // Name should be prefilled, but regenerate if somehow empty
+      console.log('[SpawnModal] Empty name, regenerating');
       const usedNames = new Set(Array.from(agents.values()).map((a) => a.name));
       setName(getRandomLotrName(usedNames));
       return;
@@ -124,10 +134,20 @@ export function SpawnModal({ isOpen, onClose, onSpawnStart, onSpawnEnd }: SpawnM
     setIsSpawning(true);
     onSpawnStart();
 
+    console.log('[SpawnModal] Calling store.spawnAgent with:', {
+      name: name.trim(),
+      class: selectedClass,
+      cwd: effectiveCwd.trim(),
+      sessionId: selectedSessionId || undefined,
+      useChrome,
+      permissionMode
+    });
+
     store.spawnAgent(name.trim(), selectedClass, effectiveCwd.trim(), undefined, selectedSessionId || undefined, useChrome, permissionMode);
   };
 
   const handleSuccess = () => {
+    console.log('[SpawnModal] Agent creation successful');
     setIsSpawning(false);
     setName('');
     onSpawnEnd();
@@ -135,12 +155,14 @@ export function SpawnModal({ isOpen, onClose, onSpawnStart, onSpawnEnd }: SpawnM
   };
 
   const handleError = () => {
+    console.error('[SpawnModal] Agent creation failed');
     setIsSpawning(false);
     setHasError(true);
     onSpawnEnd();
   };
 
   const handleDirectoryNotFound = (path: string) => {
+    console.log('[SpawnModal] Directory not found:', path);
     setIsSpawning(false);
     setMissingDirPath(path);
     setShowCreateDirPrompt(true);

@@ -89,6 +89,6 @@ export function filterCostText(text: string, hideCost: boolean): string {
     .replace(/\s*price[:\s]+~?\$[\d,.]+/gi, '')
     .replace(/\s*\(~?\$[\d,.]+\s*(?:USD|cost|spent)?\)/gi, '')
     .replace(/\s*-\s*~?\$[\d,.]+\s*$/g, '')  // trailing " - $0.05"
-    .replace(/\s+/g, ' ')  // normalize whitespace
+    .replace(/[^\S\n]+/g, ' ')  // normalize whitespace but preserve newlines
     .trim();
 }
