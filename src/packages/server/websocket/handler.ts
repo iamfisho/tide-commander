@@ -6,7 +6,7 @@
 import { Server as HttpServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import * as fs from 'fs';
-import type { Agent, ClientMessage, ServerMessage, DrawingArea, Building, PermissionRequest, DelegationDecision } from '../../shared/types.js';
+import type { Agent, AgentClass, ClientMessage, ServerMessage, DrawingArea, Building, PermissionRequest, DelegationDecision } from '../../shared/types.js';
 import { BOSS_CONTEXT_START, BOSS_CONTEXT_END } from '../../shared/types.js';
 import { agentService, claudeService, supervisorService, permissionService, bossService } from '../services/index.js';
 import { loadAreas, saveAreas, loadBuildings, saveBuildings } from '../data/index.js';
@@ -190,10 +190,8 @@ function handleClientMessage(ws: WebSocket, message: ClientMessage): void {
           buildBossMessage(agentId, command)
             .then(({ message: bossMessage, systemPrompt }) => {
               const disableTools = isTeamQuestion; // Disable tools for team questions
-              // ALWAYS force new session for boss - boss needs fresh context each time
-              const forceNewSession = true;
-              log.log(` Boss ${agent.name}: forceNewSession=true, disableTools=${disableTools}`);
-              claudeService.sendCommand(agentId, bossMessage, systemPrompt, disableTools, forceNewSession);
+              log.log(` Boss ${agent.name}: disableTools=${disableTools}`);
+              claudeService.sendCommand(agentId, bossMessage, systemPrompt, disableTools);
             })
             .catch((err) => {
               log.error(` Boss ${agent.name}: failed to build boss message:`, err);
@@ -1043,6 +1041,49 @@ At the END of your response, include a JSON block with an array of delegations. 
 - "taskCommand" is what gets sent to each agent. Can be different per agent or the same.
 - For multi-agent tasks (like "tell everyone hello"), include ALL agents in the array.
 
+---
+
+## SPAWNING NEW AGENTS:
+When you need an agent with a specific skill that isn't on your team, you can spawn a new one.
+
+### When to Spawn:
+- User requests a task but you have no suitable agent
+- You need a specialist (e.g., "I need a debugger to investigate this")
+- Building out your team for a project
+
+### Spawn Block Format:
+Include at the END of your response (can be combined with delegation):
+
+\`\`\`spawn
+[
+  {
+    "name": "<agent name>",
+    "class": "<scout|builder|debugger|architect|warrior|support>",
+    "cwd": "<optional: working directory, defaults to your cwd>"
+  }
+]
+\`\`\`
+
+### Agent Classes:
+- **scout**: Codebase exploration, file discovery
+- **builder**: Feature implementation, writing code
+- **debugger**: Bug hunting, fixing issues
+- **architect**: Planning, design decisions
+- **warrior**: Aggressive refactoring, migrations
+- **support**: Documentation, tests, cleanup
+
+### Example:
+If user asks "fix the login bug" but you have no debugger:
+
+**🔧 Spawning new agent:**
+I don't have a debugger on my team. Let me create one to investigate this issue.
+
+\`\`\`spawn
+[{"name": "BugHunter", "class": "debugger"}]
+\`\`\`
+
+After spawning, the agent will automatically be added to your team and you can delegate to them.
+
 ---`;
 }
 
@@ -1122,12 +1163,13 @@ function setupServiceListeners(): void {
       sendActivity(agentId, `Error: ${event.errorMessage}`);
     }
 
-    // For boss agents, parse delegation from step_complete result text
+    // For boss agents, parse delegation and spawn blocks from step_complete result text
     if (event.type === 'step_complete' && event.resultText) {
       const agent = agentService.getAgent(agentId);
       if (agent?.class === 'boss') {
         log.log(` Boss ${agent.name} step_complete with resultText (length: ${event.resultText.length})`);
         parseBossDelegation(agentId, agent.name, event.resultText);
+        parseBossSpawn(agentId, agent.name, event.resultText);
       }
     }
 
@@ -1186,6 +1228,88 @@ function setupServiceListeners(): void {
         }
       } catch (err) {
         log.error(` Failed to parse delegation JSON from boss ${bossName}:`, err);
+      }
+    }
+  }
+
+  // Helper to parse spawn requests from boss response
+  async function parseBossSpawn(bossId: string, bossName: string, resultText: string): Promise<void> {
+    log.log(` Boss ${bossName} checking for spawn block: ${resultText.includes('```spawn')}`);
+
+    // Parse spawn block: ```spawn\n[...]\n``` or ```spawn\n{...}\n```
+    const spawnMatch = resultText.match(/```spawn\s*\n([\s\S]*?)\n```/);
+    if (spawnMatch) {
+      log.log(` Boss ${bossName} spawn match found!`);
+      try {
+        const parsed = JSON.parse(spawnMatch[1].trim());
+
+        // Support both array and single object format
+        const spawns = Array.isArray(parsed) ? parsed : [parsed];
+
+        log.log(` Parsed ${spawns.length} spawn request(s) from boss ${bossName}`);
+
+        const boss = agentService.getAgent(bossId);
+        const bossCwd = boss?.cwd || process.cwd();
+
+        for (const spawnRequest of spawns) {
+          const { name, class: agentClass, cwd } = spawnRequest;
+
+          // Validate required fields
+          if (!name || !agentClass) {
+            log.error(` Spawn request missing required fields (name, class):`, spawnRequest);
+            continue;
+          }
+
+          // Validate agent class
+          const validClasses = ['scout', 'builder', 'debugger', 'architect', 'warrior', 'support'];
+          if (!validClasses.includes(agentClass)) {
+            log.error(` Invalid agent class "${agentClass}". Must be one of: ${validClasses.join(', ')}`);
+            continue;
+          }
+
+          // Use boss's cwd if not specified
+          const agentCwd = cwd || bossCwd;
+
+          log.log(` Boss ${bossName} spawning new ${agentClass} agent: "${name}" in ${agentCwd}`);
+
+          try {
+            const newAgent = await agentService.createAgent(
+              name,
+              agentClass as AgentClass,
+              agentCwd
+            );
+
+            // Add new agent to boss's subordinates
+            const currentSubordinates = bossService.getSubordinates(bossId).map(a => a.id);
+            const newSubordinates = [...currentSubordinates, newAgent.id];
+            bossService.assignSubordinates(bossId, newSubordinates);
+
+            log.log(` Successfully spawned agent ${newAgent.name} (${newAgent.id}) for boss ${bossName}`);
+
+            // Broadcast boss_spawned_agent - client should NOT auto-select and should walk to boss
+            broadcast({
+              type: 'boss_spawned_agent' as const,
+              payload: {
+                agent: newAgent,
+                bossId,
+                bossPosition: boss?.position || { x: 0, y: 0, z: 0 },
+              },
+            });
+
+            sendActivity(newAgent.id, `${newAgent.name} deployed by ${bossName}`);
+
+            // Notify about subordinate assignment
+            broadcast({
+              type: 'boss_subordinates_updated',
+              payload: { bossId, subordinateIds: newSubordinates },
+            });
+
+          } catch (err) {
+            log.error(` Failed to spawn agent "${name}" for boss ${bossName}:`, err);
+          }
+        }
+      } catch (err) {
+        log.error(` Failed to parse spawn JSON from boss ${bossName}:`, err);
       }
     }
   }

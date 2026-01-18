@@ -750,6 +750,17 @@ export interface DelegationHistoryMessage extends WSMessage {
   };
 }
 
+// Boss spawned agent notification (Server -> Client)
+// Used when a boss spawns a subordinate - client should NOT auto-select and should walk to boss
+export interface BossSpawnedAgentMessage extends WSMessage {
+  type: 'boss_spawned_agent';
+  payload: {
+    agent: Agent;
+    bossId: string;
+    bossPosition: { x: number; y: number; z: number };
+  };
+}
+
 export type ServerMessage =
   | AgentsUpdateMessage
   | AgentCreatedMessage
@@ -777,7 +788,8 @@ export type ServerMessage =
   | PermissionResolvedMessage
   | DelegationDecisionMessage
   | BossSubordinatesUpdatedMessage
-  | DelegationHistoryMessage;
+  | DelegationHistoryMessage
+  | BossSpawnedAgentMessage;
 
 export type ClientMessage =
   | SpawnAgentMessage

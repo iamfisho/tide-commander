@@ -225,16 +225,21 @@
 // ============================================================================
 
 .agent-bar-boss-btn {
-  background: linear-gradient(135deg, #ffd700 0%, #b8860b 100%) !important;
-  border: 1px solid #ffd700 !important;
+  background: rgba(#ffd700, 0.15);
+  border-color: #ffd700;
 
   .agent-bar-spawn-icon {
     font-size: 14px;
   }
 
   &:hover {
-    background: linear-gradient(135deg, #ffd700 0%, #daa520 100%) !important;
-    box-shadow: 0 0 12px rgba(255, 215, 0, 0.4);
+    background: rgba(#ffd700, 0.3);
+    box-shadow: 0 4px 16px rgba(#ffd700, 0.3);
+  }
+
+  .agent-bar-spawn-icon,
+  .agent-bar-spawn-label {
+    color: #ffd700;
   }
 }
 

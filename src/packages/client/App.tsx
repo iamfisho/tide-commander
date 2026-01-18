@@ -169,6 +169,9 @@ function AppContent() {
       onToolUse: (agentId, toolName, toolInput) => {
         sceneRef.current?.showToolBubble(agentId, toolName, toolInput);
       },
+      onDelegation: (bossId, subordinateId) => {
+        sceneRef.current?.showDelegationEffect(bossId, subordinateId);
+      },
     });
 
     // Connect to server only if not already connected

@@ -16,6 +16,7 @@ let onSpawnError: (() => void) | null = null;
 let onSpawnSuccess: (() => void) | null = null;
 let onToolUse: ((agentId: string, toolName: string, toolInput?: Record<string, unknown>) => void) | null = null;
 let onDirectoryNotFound: ((path: string) => void) | null = null;
+let onDelegation: ((bossId: string, subordinateId: string) => void) | null = null;
 
 export function setCallbacks(callbacks: {
   onToast?: typeof onToast;
@@ -27,6 +28,7 @@ export function setCallbacks(callbacks: {
   onSpawnSuccess?: typeof onSpawnSuccess;
   onToolUse?: typeof onToolUse;
   onDirectoryNotFound?: typeof onDirectoryNotFound;
+  onDelegation?: typeof onDelegation;
 }): void {
   if (callbacks.onToast) onToast = callbacks.onToast;
   if (callbacks.onAgentCreated) onAgentCreated = callbacks.onAgentCreated;
@@ -37,6 +39,7 @@ export function setCallbacks(callbacks: {
   if (callbacks.onSpawnSuccess) onSpawnSuccess = callbacks.onSpawnSuccess;
   if (callbacks.onToolUse) onToolUse = callbacks.onToolUse;
   if (callbacks.onDirectoryNotFound) onDirectoryNotFound = callbacks.onDirectoryNotFound;
+  if (callbacks.onDelegation) onDelegation = callbacks.onDelegation;
 }
 
 export function connect(): void {
@@ -431,6 +434,11 @@ function handleServerMessage(message: ServerMessage): void {
       if (decision.status === 'sent') {
         onToast?.('info', 'Task Delegated', `Delegated to ${decision.selectedAgentName}: ${decision.reasoning.slice(0, 80)}...`);
 
+        // Trigger delegation animation (paper flying from boss to subordinate)
+        if (decision.bossId && decision.selectedAgentId) {
+          onDelegation?.(decision.bossId, decision.selectedAgentId);
+        }
+
         // Automatically forward the command to the delegated subordinate
         console.log(`[WS] Checking auto-forward: agentId=${decision.selectedAgentId}, userCommand=${decision.userCommand?.slice(0, 50)}`);
         if (decision.selectedAgentId && decision.userCommand) {
@@ -464,6 +472,32 @@ function handleServerMessage(message: ServerMessage): void {
         decisions: DelegationDecision[];
       };
       store.setDelegationHistory(bossId, decisions);
+      break;
+    }
+
+    case 'boss_spawned_agent': {
+      // Boss spawned a subordinate agent - do NOT auto-select, walk to boss position
+      const { agent, bossPosition } = message.payload as {
+        agent: Agent;
+        bossId: string;
+        bossPosition: { x: number; y: number; z: number };
+      };
+      console.log('[WebSocket] Boss spawned agent:', agent.name, '- walking to boss at', bossPosition);
+
+      // Add agent without selecting it
+      store.addAgent(agent);
+      onAgentCreated?.(agent);
+
+      // Issue move command to walk toward boss position
+      sendMessage({
+        type: 'move_agent',
+        payload: {
+          agentId: agent.id,
+          position: bossPosition,
+        },
+      });
+
+      onToast?.('success', 'Agent Deployed', `${agent.name} spawned by boss, walking to position`);
       break;
     }
   }

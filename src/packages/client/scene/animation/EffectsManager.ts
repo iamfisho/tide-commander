@@ -39,6 +39,17 @@ interface WaitingPermissionEffect {
 }
 
 /**
+ * Delegation effect data - paper flying from boss to subordinate.
+ */
+interface DelegationEffect {
+  sprite: THREE.Sprite;
+  startPosition: THREE.Vector3;
+  endPosition: THREE.Vector3;
+  startTime: number;
+  duration: number;
+}
+
+/**
  * Tool icons for common tools
  */
 const TOOL_ICONS: Record<string, string> = {
@@ -63,6 +74,7 @@ export class EffectsManager {
   private speechBubbles: SpeechBubbleEffect[] = [];
   private sleepingEffects: SleepingEffect[] = [];
   private waitingPermissionEffects: WaitingPermissionEffect[] = [];
+  private delegationEffects: DelegationEffect[] = [];
   private agentMeshes: Map<string, THREE.Group> = new Map();
 
   constructor(scene: THREE.Scene) {
@@ -299,6 +311,119 @@ export class EffectsManager {
       }
       this.waitingPermissionEffects.splice(index, 1);
     }
+  }
+
+  /**
+   * Create a delegation effect - paper/document flying from boss to subordinate.
+   */
+  createDelegationEffect(bossId: string, subordinateId: string): void {
+    const bossGroup = this.agentMeshes.get(bossId);
+    const subGroup = this.agentMeshes.get(subordinateId);
+
+    if (!bossGroup || !subGroup) {
+      console.log('[EffectsManager] Cannot create delegation effect - missing agent meshes');
+      return;
+    }
+
+    // Create paper/document sprite
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d')!;
+    canvas.width = 64;
+    canvas.height = 64;
+
+    // Draw paper document icon
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = '#ffd700'; // Gold border
+    ctx.lineWidth = 2;
+
+    // Paper shape (slightly angled for flying effect)
+    ctx.save();
+    ctx.translate(32, 32);
+    ctx.rotate(-0.2); // Slight rotation for dynamic look
+
+    // Paper body
+    ctx.beginPath();
+    ctx.moveTo(-12, -18);
+    ctx.lineTo(8, -18);
+    ctx.lineTo(12, -14);
+    ctx.lineTo(12, 18);
+    ctx.lineTo(-12, 18);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Folded corner
+    ctx.beginPath();
+    ctx.moveTo(8, -18);
+    ctx.lineTo(8, -14);
+    ctx.lineTo(12, -14);
+    ctx.strokeStyle = '#cccccc';
+    ctx.stroke();
+    ctx.fillStyle = '#f0f0f0';
+    ctx.fill();
+
+    // Lines on paper (text simulation)
+    ctx.strokeStyle = '#888888';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 4; i++) {
+      const y = -8 + i * 6;
+      const width = i === 3 ? 10 : 16; // Last line shorter
+      ctx.beginPath();
+      ctx.moveTo(-8, y);
+      ctx.lineTo(-8 + width, y);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+
+    // Add golden glow around the paper
+    ctx.shadowColor = '#ffd700';
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.arc(32, 32, 20, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 215, 0, 0.1)';
+    ctx.fill();
+
+    // Create sprite
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.needsUpdate = true;
+
+    const material = new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      opacity: 1.0,
+      depthTest: false,
+    });
+
+    const sprite = new THREE.Sprite(material);
+    sprite.scale.set(0.3, 0.3, 1);
+
+    // Start position (above boss)
+    const startPos = new THREE.Vector3(
+      bossGroup.position.x,
+      bossGroup.position.y + 1.5,
+      bossGroup.position.z
+    );
+
+    // End position (above subordinate)
+    const endPos = new THREE.Vector3(
+      subGroup.position.x,
+      subGroup.position.y + 1.2,
+      subGroup.position.z
+    );
+
+    sprite.position.copy(startPos);
+    this.scene.add(sprite);
+
+    this.delegationEffects.push({
+      sprite,
+      startPosition: startPos.clone(),
+      endPosition: endPos.clone(),
+      startTime: performance.now(),
+      duration: 1200, // 1.2 seconds for the flight
+    });
   }
 
   /**
@@ -562,6 +687,9 @@ export class EffectsManager {
 
     // Update waiting permission effects
     this.updateWaitingPermissionEffects();
+
+    // Update delegation effects
+    this.updateDelegationEffects(now);
   }
 
   /**
@@ -660,6 +788,61 @@ export class EffectsManager {
         const opacityPulse = 0.85 + Math.sin(elapsed * 0.005) * 0.1;
         sprite.material.opacity = opacityPulse * fadeIn;
       }
+    }
+  }
+
+  /**
+   * Update delegation effects - animate paper flying from boss to subordinate.
+   */
+  private updateDelegationEffects(now: number): void {
+    const toRemove: number[] = [];
+
+    for (let i = 0; i < this.delegationEffects.length; i++) {
+      const effect = this.delegationEffects[i];
+      const elapsed = now - effect.startTime;
+      const t = Math.min(elapsed / effect.duration, 1);
+
+      // Eased progress for smooth movement
+      const easeOutCubic = 1 - Math.pow(1 - t, 3);
+
+      // Calculate current position with arc trajectory
+      const arcHeight = 1.5; // How high the paper arcs
+      const arcProgress = Math.sin(t * Math.PI); // Peaks in the middle
+
+      effect.sprite.position.lerpVectors(
+        effect.startPosition,
+        effect.endPosition,
+        easeOutCubic
+      );
+      // Add arc height
+      effect.sprite.position.y += arcProgress * arcHeight;
+
+      // Rotation animation - paper tumbles as it flies
+      const rotation = t * Math.PI * 2; // Full rotation during flight
+      effect.sprite.material.rotation = rotation;
+
+      // Scale pulse during flight - paper appears to flutter
+      const flutter = 1 + Math.sin(t * Math.PI * 6) * 0.15;
+      const baseScale = 0.3;
+      effect.sprite.scale.set(baseScale * flutter, baseScale * flutter, 1);
+
+      // Fade out at the end
+      const fadeOut = t > 0.8 ? 1 - ((t - 0.8) / 0.2) : 1;
+      effect.sprite.material.opacity = fadeOut;
+
+      if (t >= 1) {
+        toRemove.push(i);
+      }
+    }
+
+    // Remove completed effects
+    for (let i = toRemove.length - 1; i >= 0; i--) {
+      const idx = toRemove[i];
+      const effect = this.delegationEffects[idx];
+      this.scene.remove(effect.sprite);
+      effect.sprite.material.map?.dispose();
+      effect.sprite.material.dispose();
+      this.delegationEffects.splice(idx, 1);
     }
   }
 
@@ -819,5 +1002,13 @@ export class EffectsManager {
       }
     }
     this.waitingPermissionEffects = [];
+
+    // Clear delegation effects
+    for (const effect of this.delegationEffects) {
+      this.scene.remove(effect.sprite);
+      effect.sprite.material.map?.dispose();
+      effect.sprite.material.dispose();
+    }
+    this.delegationEffects = [];
   }
 }

@@ -486,6 +486,14 @@ export class SceneManager {
     this.effectsManager.createSpeechBubble(agentId, toolName, toolInput);
   }
 
+  /**
+   * Show a delegation animation - paper flying from boss to subordinate.
+   */
+  showDelegationEffect(bossId: string, subordinateId: string): void {
+    this.effectsManager.setAgentMeshes(this.agentMeshes);
+    this.effectsManager.createDelegationEffect(bossId, subordinateId);
+  }
+
   // ============================================
   // Public API - Camera
   // ============================================
