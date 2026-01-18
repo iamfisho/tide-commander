@@ -633,15 +633,44 @@ export class Battlefield {
   }
 
   /**
-   * Remove galactic elements from the scene.
+   * Remove galactic elements from the scene and dispose resources.
    */
   private removeGalacticElements(): void {
     if (this.galacticGroup) {
+      // Dispose all geometries, materials, and textures in the galactic group
+      this.galacticGroup.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          child.geometry?.dispose();
+          if (child.material instanceof THREE.Material) {
+            this.disposeMaterial(child.material);
+          } else if (Array.isArray(child.material)) {
+            child.material.forEach(mat => this.disposeMaterial(mat));
+          }
+        } else if (child instanceof THREE.Points) {
+          child.geometry?.dispose();
+          if (child.material instanceof THREE.Material) {
+            child.material.dispose();
+          }
+        }
+      });
+
       this.scene.remove(this.galacticGroup);
       this.galacticGroup = null;
       this.galacticStars = null;
       this.galacticNebulas = [];
     }
+  }
+
+  /**
+   * Helper to dispose a material and its textures.
+   */
+  private disposeMaterial(material: THREE.Material): void {
+    if (material instanceof THREE.MeshBasicMaterial ||
+        material instanceof THREE.MeshStandardMaterial ||
+        material instanceof THREE.SpriteMaterial) {
+      material.map?.dispose();
+    }
+    material.dispose();
   }
 
   /**
@@ -1781,5 +1810,117 @@ export class Battlefield {
     this.fillLight = new THREE.DirectionalLight(0xffffff, 0.4);
     this.fillLight.position.set(-10, 15, 10);
     this.scene.add(this.fillLight);
+  }
+
+  /**
+   * Dispose all battlefield resources.
+   */
+  dispose(): void {
+    // Dispose galactic elements
+    this.removeGalacticElements();
+
+    // Dispose ground
+    if (this.ground) {
+      this.ground.geometry.dispose();
+      this.disposeMaterial(this.ground.material as THREE.Material);
+      this.scene.remove(this.ground);
+    }
+
+    // Dispose grid
+    if (this.gridHelper) {
+      this.gridHelper.geometry.dispose();
+      if (this.gridHelper.material instanceof THREE.Material) {
+        this.gridHelper.material.dispose();
+      }
+      this.scene.remove(this.gridHelper);
+    }
+
+    // Dispose grass
+    if (this.grass) {
+      this.grass.geometry.dispose();
+      this.disposeMaterial(this.grass.material as THREE.Material);
+      this.scene.remove(this.grass);
+    }
+
+    // Dispose sun
+    if (this.sun) {
+      this.disposeMaterial(this.sun.material);
+      this.scene.remove(this.sun);
+    }
+
+    // Dispose moon
+    if (this.moon) {
+      this.disposeMaterial(this.moon.material);
+      this.scene.remove(this.moon);
+    }
+
+    // Dispose stars
+    if (this.stars) {
+      this.stars.geometry.dispose();
+      (this.stars.material as THREE.Material).dispose();
+      this.scene.remove(this.stars);
+    }
+
+    // Dispose trees
+    for (const tree of this.trees) {
+      this.disposeGroup(tree);
+      this.scene.remove(tree);
+    }
+    this.trees = [];
+
+    // Dispose bushes
+    for (const bush of this.bushes) {
+      this.disposeGroup(bush);
+      this.scene.remove(bush);
+    }
+    this.bushes = [];
+
+    // Dispose house
+    if (this.house) {
+      this.disposeGroup(this.house);
+      this.scene.remove(this.house);
+    }
+
+    // Dispose lamps
+    for (const lamp of this.lamps) {
+      this.disposeGroup(lamp);
+      this.scene.remove(lamp);
+    }
+    this.lamps = [];
+
+    // Dispose lamp lights
+    for (const light of this.lampLights) {
+      this.scene.remove(light);
+      light.dispose();
+    }
+    this.lampLights = [];
+
+    // Dispose window materials
+    this.windowMaterials = [];
+
+    // Dispose lights
+    if (this.ambientLight) this.scene.remove(this.ambientLight);
+    if (this.hemiLight) this.scene.remove(this.hemiLight);
+    if (this.mainLight) {
+      this.mainLight.shadow.map?.dispose();
+      this.scene.remove(this.mainLight);
+    }
+    if (this.fillLight) this.scene.remove(this.fillLight);
+  }
+
+  /**
+   * Helper to dispose all resources in a group.
+   */
+  private disposeGroup(group: THREE.Group): void {
+    group.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.geometry?.dispose();
+        if (child.material instanceof THREE.Material) {
+          this.disposeMaterial(child.material);
+        } else if (Array.isArray(child.material)) {
+          child.material.forEach(mat => this.disposeMaterial(mat));
+        }
+      }
+    });
   }
 }

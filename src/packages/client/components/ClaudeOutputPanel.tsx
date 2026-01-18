@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo, memo } from 'react';
 import ReactMarkdown, { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { useStore, useHideCost, store, ClaudeOutput } from '../store';
+import { useStore, useHideCost, useAgentOutputs, store, ClaudeOutput } from '../store';
 import type { Agent, AgentAnalysis, PermissionRequest } from '../../shared/types';
 import { BOSS_CONTEXT_START, BOSS_CONTEXT_END } from '../../shared/types';
 import { AGENT_CLASS_CONFIG } from '../scene/config';
@@ -440,7 +440,8 @@ export function ClaudeOutputPanel() {
   const isSingleSelection = selectedAgentIds.length === 1;
   const selectedAgentId = isSingleSelection ? selectedAgentIds[0] : null;
   const selectedAgent = selectedAgentId ? state.agents.get(selectedAgentId) : null;
-  const outputs = selectedAgentId ? store.getOutputs(selectedAgentId) : [];
+  // Use the reactive hook for outputs instead of direct store access
+  const outputs = useAgentOutputs(selectedAgentId);
 
   // Get pending permission requests for this agent
   const pendingPermissions = selectedAgentId

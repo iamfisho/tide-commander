@@ -540,8 +540,41 @@ export class CharacterFactory {
     return `${days}d`;
   }
 
+  // Reusable canvases for updating sprites (avoid creating new canvases per frame)
+  private idleTimerCanvas: HTMLCanvasElement | null = null;
+  private idleTimerCtx: CanvasRenderingContext2D | null = null;
+  private manaBarCanvas: HTMLCanvasElement | null = null;
+  private manaBarCtx: CanvasRenderingContext2D | null = null;
+
+  /**
+   * Get or create the reusable idle timer canvas.
+   */
+  private getIdleTimerCanvas(): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
+    if (!this.idleTimerCanvas) {
+      this.idleTimerCanvas = document.createElement('canvas');
+      this.idleTimerCanvas.width = 400;
+      this.idleTimerCanvas.height = 64;
+      this.idleTimerCtx = this.idleTimerCanvas.getContext('2d')!;
+    }
+    return { canvas: this.idleTimerCanvas, ctx: this.idleTimerCtx! };
+  }
+
+  /**
+   * Get or create the reusable mana bar canvas.
+   */
+  private getManaBarCanvas(): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
+    if (!this.manaBarCanvas) {
+      this.manaBarCanvas = document.createElement('canvas');
+      this.manaBarCanvas.width = 400;
+      this.manaBarCanvas.height = 64;
+      this.manaBarCtx = this.manaBarCanvas.getContext('2d')!;
+    }
+    return { canvas: this.manaBarCanvas, ctx: this.manaBarCtx! };
+  }
+
   /**
    * Update the idle timer for an agent.
+   * Optimized: reuses canvas to avoid memory leaks.
    */
   updateIdleTimer(group: THREE.Group, status: string, lastActivity: number): void {
     const idleTimer = group.getObjectByName('idleTimer') as THREE.Sprite;
@@ -550,21 +583,19 @@ export class CharacterFactory {
     const material = idleTimer.material as THREE.SpriteMaterial;
     if (!material.map) return;
 
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d')!;
-    // Match canvas size from createIdleTimer (same as mana bar)
-    canvas.width = 400;
-    canvas.height = 64;
+    // Reuse canvas instead of creating new one
+    const { canvas, ctx } = this.getIdleTimerCanvas();
 
     this.drawIdleTimer(ctx, canvas.width, canvas.height, status, lastActivity);
 
-    // Update texture
+    // Update texture - reuse existing texture, just update the image data
     material.map.image = canvas;
     material.map.needsUpdate = true;
   }
 
   /**
    * Update the mana bar for an agent.
+   * Optimized: reuses canvas to avoid memory leaks.
    */
   updateManaBar(group: THREE.Group, contextUsed: number, contextLimit: number, status: string): void {
     const manaBar = group.getObjectByName('manaBar') as THREE.Sprite;
@@ -573,15 +604,12 @@ export class CharacterFactory {
     const material = manaBar.material as THREE.SpriteMaterial;
     if (!material.map) return;
 
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d')!;
-    // Match the higher resolution from createManaBar
-    canvas.width = 400;
-    canvas.height = 64;
+    // Reuse canvas instead of creating new one
+    const { canvas, ctx } = this.getManaBarCanvas();
 
     this.drawManaBar(ctx, canvas.width, canvas.height, contextUsed, contextLimit, status);
 
-    // Update texture
+    // Update texture - reuse existing texture, just update the image data
     material.map.image = canvas;
     material.map.needsUpdate = true;
   }
@@ -670,6 +698,67 @@ export class CharacterFactory {
 
     // Update idle timer
     this.updateIdleTimer(group, agent.status, agent.lastActivity);
+  }
+
+  /**
+   * Dispose of an agent mesh and all its resources.
+   * Call this when removing an agent from the scene.
+   */
+  disposeAgentMesh(meshData: AgentMeshData): void {
+    // Stop and clean up animation mixer
+    if (meshData.mixer) {
+      meshData.mixer.stopAllAction();
+      meshData.mixer.uncacheRoot(meshData.group);
+    }
+
+    // Dispose all children in the group
+    meshData.group.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.geometry?.dispose();
+        if (Array.isArray(child.material)) {
+          child.material.forEach(mat => {
+            this.disposeMaterial(mat);
+          });
+        } else if (child.material) {
+          this.disposeMaterial(child.material);
+        }
+      } else if (child instanceof THREE.Sprite) {
+        this.disposeMaterial(child.material);
+      } else if (child instanceof THREE.SkinnedMesh) {
+        child.geometry?.dispose();
+        if (Array.isArray(child.material)) {
+          child.material.forEach(mat => {
+            this.disposeMaterial(mat);
+          });
+        } else if (child.material) {
+          this.disposeMaterial(child.material);
+        }
+      }
+    });
+
+    // Clear the group
+    while (meshData.group.children.length > 0) {
+      meshData.group.remove(meshData.group.children[0]);
+    }
+
+    // Clear animations map
+    meshData.animations.clear();
+  }
+
+  /**
+   * Dispose a material and its textures.
+   */
+  private disposeMaterial(material: THREE.Material): void {
+    if (material instanceof THREE.MeshStandardMaterial ||
+        material instanceof THREE.MeshBasicMaterial ||
+        material instanceof THREE.SpriteMaterial) {
+      material.map?.dispose();
+      if ('normalMap' in material) material.normalMap?.dispose();
+      if ('roughnessMap' in material) material.roughnessMap?.dispose();
+      if ('metalnessMap' in material) material.metalnessMap?.dispose();
+      if ('emissiveMap' in material) material.emissiveMap?.dispose();
+    }
+    material.dispose();
   }
 
   /**

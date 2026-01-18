@@ -283,6 +283,8 @@ export class SceneManager {
     const meshData = this.agentMeshes.get(agentId);
     if (meshData) {
       this.scene.remove(meshData.group);
+      // Properly dispose all geometries, materials, and textures
+      this.characterFactory.disposeAgentMesh(meshData);
       this.agentMeshes.delete(agentId);
     }
 
@@ -1120,6 +1122,25 @@ export class SceneManager {
     this.buildingManager.dispose();
     // Use dispose() instead of clear() to fully clean up cached resources
     this.effectsManager.dispose();
+
+    // Dispose all agent meshes
+    for (const meshData of this.agentMeshes.values()) {
+      this.scene.remove(meshData.group);
+      this.characterFactory.disposeAgentMesh(meshData);
+    }
+    this.agentMeshes.clear();
+
+    // Dispose boss-subordinate lines
+    for (const line of this.bossSubordinateLines) {
+      this.scene.remove(line);
+      line.geometry.dispose();
+      (line.material as THREE.Material).dispose();
+    }
+    this.bossSubordinateLines = [];
+
+    // Dispose battlefield
+    this.battlefield.dispose();
+
     this.renderer.dispose();
     this.controls.dispose();
   }
