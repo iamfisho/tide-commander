@@ -13,6 +13,7 @@ import {
   extractToolKeyParam,
   isErrorResult,
   getStatusColor,
+  formatTimestamp,
 } from '../utils/outputRendering';
 
 // Custom markdown components with inline styles for guaranteed rendering
@@ -158,17 +159,6 @@ function isChatViewOutput(text: string): boolean {
 
   // SHOW only what appears to be final responses (summaries, answers, etc.)
   return true;
-}
-
-// Helper to format timestamp for display (HH:MM:SS)
-function formatTimestamp(timestamp: number): string {
-  const date = new Date(timestamp);
-  return date.toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  });
 }
 
 // Helper to parse boss context from content
@@ -667,6 +657,8 @@ export function ClaudeOutputPanel() {
     }
 
     // Simple view: enrich tool lines with key parameters
+    // Truncate Bash command output to 300 chars max in simple view
+    const BASH_TRUNCATE_LENGTH = 300;
     const result: (ClaudeOutput & { _toolKeyParam?: string })[] = [];
     for (let i = 0; i < outputs.length; i++) {
       const output = outputs[i];
@@ -693,6 +685,11 @@ export function ClaudeOutputPanel() {
           if (nextOutput.text.startsWith('Using tool:') || nextOutput.text.startsWith('Tool result:')) {
             break;
           }
+        }
+
+        // Truncate Bash commands in simple view for readability
+        if (toolName === 'Bash' && keyParam && keyParam.length > BASH_TRUNCATE_LENGTH) {
+          keyParam = keyParam.substring(0, BASH_TRUNCATE_LENGTH - 3) + '...';
         }
 
         // Create enriched output with tool name + key param
@@ -1931,7 +1928,11 @@ const HistoryLine = memo(function HistoryLine({ message, highlight, simpleView, 
     // Simple view: show icon, tool name, and key parameter
     if (simpleView) {
       // Extract key parameter from the content (which contains the tool input JSON)
-      const keyParam = toolName && truncatedContent ? extractToolKeyParam(toolName, truncatedContent) : null;
+      let keyParam = toolName && truncatedContent ? extractToolKeyParam(toolName, truncatedContent) : null;
+      // Truncate Bash commands in simple view for readability (max 300 chars)
+      if (toolName === 'Bash' && keyParam && keyParam.length > 300) {
+        keyParam = keyParam.substring(0, 297) + '...';
+      }
       return (
         <div className="output-line output-tool-use output-tool-simple">
           {timeStr && <span className="output-timestamp">{timeStr}</span>}

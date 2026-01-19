@@ -28,6 +28,53 @@ import {
 } from '../data/index.js';
 import { logger } from '../utils/logger.js';
 
+/**
+ * Sanitize a string by removing invalid Unicode surrogate pairs.
+ * This fixes "no low surrogate in string" JSON errors.
+ * Handles both raw Unicode surrogates and JSON-escaped surrogates like \ud83d.
+ */
+function sanitizeUnicode(str: string): string {
+  // First, handle JSON-escaped surrogates (e.g., \ud83d without \udc00-\udfff following)
+  const highPattern = /\\u[dD][89aAbB][0-9a-fA-F]{2}/g;
+  const lowPattern = /\\u[dD][cCdDeEfF][0-9a-fA-F]{2}/;
+
+  let sanitized = str.replace(highPattern, (match, offset) => {
+    const afterMatch = str.slice(offset + match.length);
+    if (lowPattern.test(afterMatch.slice(0, 6))) {
+      return match;
+    }
+    return '\\ufffd';
+  });
+
+  sanitized = sanitized.replace(/\\u[dD][cCdDeEfF][0-9a-fA-F]{2}/g, (match, offset) => {
+    const beforeMatch = sanitized.slice(Math.max(0, offset - 6), offset);
+    if (/\\u[dD][89aAbB][0-9a-fA-F]{2}$/.test(beforeMatch)) {
+      return match;
+    }
+    return '\\ufffd';
+  });
+
+  // Then handle raw Unicode surrogates
+  let result = '';
+  for (let i = 0; i < sanitized.length; i++) {
+    const code = sanitized.charCodeAt(i);
+    if (code >= 0xD800 && code <= 0xDBFF) {
+      const nextCode = sanitized.charCodeAt(i + 1);
+      if (nextCode >= 0xDC00 && nextCode <= 0xDFFF) {
+        result += sanitized[i] + sanitized[i + 1];
+        i++;
+      } else {
+        result += '\uFFFD';
+      }
+    } else if (code >= 0xDC00 && code <= 0xDFFF) {
+      result += '\uFFFD';
+    } else {
+      result += sanitized[i];
+    }
+  }
+  return result;
+}
+
 const log = logger.supervisor;
 
 // In-memory narrative storage per agent
@@ -549,20 +596,21 @@ function buildSingleAgentPrompt(summary: AgentStatusSummary): string {
     ? Math.round((Date.now() - summary.lastAssignedTaskTime) / 1000)
     : null;
 
+  // Sanitize all string fields to prevent invalid Unicode surrogates
   const agentData = {
     id: summary.id,
-    name: summary.name,
+    name: sanitizeUnicode(summary.name),
     class: summary.class,
     status: summary.status,
-    currentTask: summary.currentTask || 'None',
+    currentTask: sanitizeUnicode(summary.currentTask || 'None'),
     assignedTask: summary.lastAssignedTask
-      ? truncate(summary.lastAssignedTask, 500)
+      ? sanitizeUnicode(truncate(summary.lastAssignedTask, 500))
       : 'No task assigned yet',
     taskAssignedSecondsAgo,
     tokensUsed: summary.tokensUsed,
     contextPercent: Math.round((summary.contextUsed / 200000) * 100),
     timeSinceActivity: Math.round((Date.now() - summary.lastActivityTime) / 1000),
-    recentActivities: summary.recentNarratives.map((n) => n.narrative).slice(0, 5),
+    recentActivities: summary.recentNarratives.map((n) => sanitizeUnicode(n.narrative)).slice(0, 5),
   };
 
   return SINGLE_AGENT_PROMPT.replace('{{AGENT_DATA}}', JSON.stringify(agentData, null, 2));
@@ -660,6 +708,7 @@ function saveSingleAgentToHistory(analysis: AgentAnalysis): void {
 function buildSupervisorPrompt(summaries: AgentStatusSummary[]): string {
   const customPrompt = config.customPrompt || DEFAULT_SUPERVISOR_PROMPT;
 
+  // Sanitize all string fields to prevent invalid Unicode surrogates
   const agentData = summaries.map((s) => {
     // Calculate time since task was assigned
     const taskAssignedSecondsAgo = s.lastAssignedTaskTime
@@ -668,19 +717,19 @@ function buildSupervisorPrompt(summaries: AgentStatusSummary[]): string {
 
     return {
       id: s.id, // Include ID so we can match response back
-      name: s.name,
+      name: sanitizeUnicode(s.name),
       class: s.class,
       status: s.status,
-      currentTask: s.currentTask || 'None',
+      currentTask: sanitizeUnicode(s.currentTask || 'None'),
       // Include the full assigned task so supervisor knows what the agent was asked to do
       assignedTask: s.lastAssignedTask
-        ? truncate(s.lastAssignedTask, 500)
+        ? sanitizeUnicode(truncate(s.lastAssignedTask, 500))
         : 'No task assigned yet',
       taskAssignedSecondsAgo,
       tokensUsed: s.tokensUsed,
       contextPercent: Math.round((s.contextUsed / 200000) * 100),
       timeSinceActivity: Math.round((Date.now() - s.lastActivityTime) / 1000),
-      recentActivities: s.recentNarratives.map((n) => n.narrative).slice(0, 5),
+      recentActivities: s.recentNarratives.map((n) => sanitizeUnicode(n.narrative)).slice(0, 5),
     };
   });
 
@@ -852,11 +901,13 @@ async function callClaudeForAnalysis(prompt: string): Promise<string> {
     // Send the prompt via stdin using stream-json format
     childProcess.on('spawn', () => {
       log.log(' Process spawned, sending prompt via stdin...');
+      // Sanitize prompt to remove invalid Unicode surrogates that break JSON
+      const sanitizedPrompt = sanitizeUnicode(prompt);
       const stdinMessage = JSON.stringify({
         type: 'user',
         message: {
           role: 'user',
-          content: prompt,
+          content: sanitizedPrompt,
         },
       });
       childProcess.stdin?.write(stdinMessage + '\n');

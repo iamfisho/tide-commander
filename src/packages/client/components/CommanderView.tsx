@@ -10,6 +10,7 @@ import {
   TOOL_ICONS,
   isHumanReadableOutput,
   isErrorResult,
+  formatTimestamp,
 } from '../utils/outputRendering';
 
 interface HistoryMessage {
@@ -111,10 +112,15 @@ export function CommanderView({ isOpen, onClose }: CommanderViewProps) {
   }, [activeTab, state.areas]);
 
   // Sort and filter agents by active tab
+  // Bosses always appear first, then sorted by creation time
   const filteredAgents = useMemo(() => {
-    const agents = Array.from(state.agents.values()).sort((a, b) =>
-      (a.createdAt || 0) - (b.createdAt || 0)
-    );
+    const agents = Array.from(state.agents.values()).sort((a, b) => {
+      // Bosses first
+      if (a.class === 'boss' && b.class !== 'boss') return -1;
+      if (a.class !== 'boss' && b.class === 'boss') return 1;
+      // Then by creation time
+      return (a.createdAt || 0) - (b.createdAt || 0);
+    });
 
     if (activeTab === 'all') return agents;
     if (activeTab === 'unassigned') {
@@ -801,7 +807,10 @@ function AgentPanel({ agent, history, outputs, isExpanded, isFocused, advancedVi
             style={{ background: statusColor }}
             title={agent.status}
           />
-          <span className="agent-panel-name">{agent.name}</span>
+          <span className="agent-panel-name">
+            {agent.class === 'boss' && <span className="agent-panel-boss-crown">👑</span>}
+            {agent.name}
+          </span>
           <span className="agent-panel-class">{agent.class}</span>
           <span className="agent-panel-id" title={`ID: ${agent.id}`}>
             [{agent.id.substring(0, 4)}]
@@ -963,12 +972,12 @@ function AgentPanel({ agent, history, outputs, isExpanded, isFocused, advancedVi
 }
 
 function MessageLine({ message }: { message: HistoryMessage }) {
-  const { type, content, toolName } = message;
+  const { type, content, toolName, timestamp } = message;
 
-  const truncated = content.length > 500
-    ? content.substring(0, 500) + '...'
-    : content;
+  // Format timestamp for display
+  const timeStr = timestamp ? formatTimestamp(timestamp) : '';
 
+  // NO TRUNCATION - show full content
   if (type === 'tool_use') {
     const icon = TOOL_ICONS[toolName || ''] || TOOL_ICONS.default;
     // Try to format content nicely
@@ -983,6 +992,7 @@ function MessageLine({ message }: { message: HistoryMessage }) {
     return (
       <div className="msg-line msg-tool">
         <div className="msg-tool-header">
+          {timeStr && <span className="msg-timestamp">{timeStr}</span>}
           <span className="msg-tool-icon">{icon}</span>
           <span className="msg-tool-name">{toolName}</span>
         </div>
@@ -999,6 +1009,7 @@ function MessageLine({ message }: { message: HistoryMessage }) {
     return (
       <div className={`msg-line msg-result ${isError ? 'msg-result-error' : 'msg-result-success'}`}>
         <div className="msg-result-header">
+          {timeStr && <span className="msg-timestamp">{timeStr}</span>}
           <span className="msg-result-icon">{resultIcon}</span>
           <span className="msg-result-label">{isError ? 'Error' : 'Result'}</span>
         </div>
@@ -1011,21 +1022,26 @@ function MessageLine({ message }: { message: HistoryMessage }) {
 
   return (
     <div className={`msg-line ${isUser ? 'msg-user' : 'msg-assistant'}`}>
+      {timeStr && <span className="msg-timestamp">{timeStr}</span>}
       <span className="msg-role">{isUser ? 'You' : 'Claude'}</span>
       <span className="msg-content markdown-content">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{truncated}</ReactMarkdown>
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
       </span>
     </div>
   );
 }
 
 function OutputLine({ output }: { output: ClaudeOutput }) {
-  const { text, isStreaming, isUserPrompt } = output;
+  const { text, isStreaming, isUserPrompt, timestamp } = output;
+
+  // Format timestamp for display
+  const timeStr = formatTimestamp(timestamp || Date.now());
 
   // Handle user prompts
   if (isUserPrompt) {
     return (
       <div className="msg-line msg-user msg-live">
+        <span className="msg-timestamp">{timeStr}</span>
         <span className="msg-role">You</span>
         <span className="msg-content markdown-content">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
@@ -1041,6 +1057,7 @@ function OutputLine({ output }: { output: ClaudeOutput }) {
     return (
       <div className="msg-line msg-tool msg-live">
         <div className="msg-tool-header">
+          <span className="msg-timestamp">{timeStr}</span>
           <span className="msg-tool-icon">{icon}</span>
           <span className="msg-tool-name">{toolName}</span>
           {isStreaming && <span className="msg-tool-streaming">...</span>}
@@ -1057,6 +1074,7 @@ function OutputLine({ output }: { output: ClaudeOutput }) {
     return (
       <div className={`msg-line msg-result msg-live ${isError ? 'msg-result-error' : 'msg-result-success'}`}>
         <div className="msg-result-header">
+          <span className="msg-timestamp">{timeStr}</span>
           <span className="msg-result-icon">{resultIcon}</span>
           <span className="msg-result-label">{isError ? 'Error' : 'Result'}</span>
         </div>
@@ -1070,6 +1088,7 @@ function OutputLine({ output }: { output: ClaudeOutput }) {
 
   return (
     <div className={className}>
+      <span className="msg-timestamp">{timeStr}</span>
       <span className="msg-role">Claude</span>
       <span className="msg-content markdown-content">
         <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>

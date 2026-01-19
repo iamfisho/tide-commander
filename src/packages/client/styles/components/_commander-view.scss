@@ -380,6 +380,11 @@
   text-overflow: ellipsis;
 }
 
+.agent-panel-boss-crown {
+  margin-right: 4px;
+  font-size: 11px;
+}
+
 .agent-panel-class {
   font-size: 10px;
   color: $dracula-comment;
@@ -638,13 +643,26 @@
   }
 }
 
+// Timestamp display - inline with role, with background for legibility
+.msg-timestamp {
+  font-family: $font-mono;
+  font-size: 9px;
+  color: $dracula-comment;
+  background: rgba($dracula-bg, 0.7);
+  padding: 1px 4px;
+  border-radius: 3px;
+  margin-right: 6px;
+  display: inline;
+  user-select: none;
+}
+
 .msg-role {
   font-weight: bold;
   font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  margin-bottom: 3px;
-  display: block;
+  margin-right: 6px;
+  display: inline;  // Inline with timestamp
 }
 
 .msg-tool {

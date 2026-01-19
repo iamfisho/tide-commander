@@ -26,6 +26,53 @@ import { logger } from '../utils/logger.js';
 
 const log = logger.boss || console;
 
+/**
+ * Sanitize a string by removing invalid Unicode surrogate pairs.
+ * This fixes "no low surrogate in string" JSON errors.
+ * Handles both raw Unicode surrogates and JSON-escaped surrogates like \ud83d.
+ */
+function sanitizeUnicode(str: string): string {
+  // First, handle JSON-escaped surrogates (e.g., \ud83d without \udc00-\udfff following)
+  const highPattern = /\\u[dD][89aAbB][0-9a-fA-F]{2}/g;
+  const lowPattern = /\\u[dD][cCdDeEfF][0-9a-fA-F]{2}/;
+
+  let sanitized = str.replace(highPattern, (match, offset) => {
+    const afterMatch = str.slice(offset + match.length);
+    if (lowPattern.test(afterMatch.slice(0, 6))) {
+      return match;
+    }
+    return '\\ufffd';
+  });
+
+  sanitized = sanitized.replace(/\\u[dD][cCdDeEfF][0-9a-fA-F]{2}/g, (match, offset) => {
+    const beforeMatch = sanitized.slice(Math.max(0, offset - 6), offset);
+    if (/\\u[dD][89aAbB][0-9a-fA-F]{2}$/.test(beforeMatch)) {
+      return match;
+    }
+    return '\\ufffd';
+  });
+
+  // Then handle raw Unicode surrogates
+  let result = '';
+  for (let i = 0; i < sanitized.length; i++) {
+    const code = sanitized.charCodeAt(i);
+    if (code >= 0xD800 && code <= 0xDBFF) {
+      const nextCode = sanitized.charCodeAt(i + 1);
+      if (nextCode >= 0xDC00 && nextCode <= 0xDFFF) {
+        result += sanitized[i] + sanitized[i + 1];
+        i++;
+      } else {
+        result += '\uFFFD';
+      }
+    } else if (code >= 0xDC00 && code <= 0xDFFF) {
+      result += '\uFFFD';
+    } else {
+      result += sanitized[i];
+    }
+  }
+  return result;
+}
+
 // Delegation history storage (persisted to disk)
 let delegationHistories: Map<string, DelegationDecision[]> = new Map();
 
@@ -346,7 +393,7 @@ export async function delegateCommand(
   } catch (err) {
     log.error?.(' Delegation LLM failed, using fallback:', err);
 
-    // Fallback: select first idle agent, or first agent
+    // Fallback: ALWAYS prioritize idle agents over busy ones
     const idleAgent = subordinates.find(s => s.status === 'idle') || subordinates[0];
 
     const fallbackDecision: DelegationDecision = {
@@ -356,7 +403,9 @@ export async function delegateCommand(
       userCommand: command,
       selectedAgentId: idleAgent.id,
       selectedAgentName: idleAgent.name,
-      reasoning: 'Fallback selection: chose first available agent',
+      reasoning: idleAgent.status === 'idle'
+        ? 'Fallback selection: chose idle agent to balance workload'
+        : 'Fallback selection: no idle agents available, chose first agent',
       alternativeAgents: subordinates.filter(s => s.id !== idleAgent.id).map(s => s.name),
       confidence: 'low',
       status: 'sent',
@@ -385,30 +434,32 @@ IMPORTANT: You MUST respond with ONLY a JSON object. No explanations, no markdow
 "{{USER_COMMAND}}"
 
 ## Selection Rules
-- Match agent class to task type (scout=explore, builder=code, debugger=fix, architect=plan, warrior=refactor, support=docs/tests)
-- Prefer idle agents over working ones
-- Avoid agents with >80% context usage
-- For general questions or status queries, pick any idle agent
+1. **Strongly prefer idle agents** - Balance workload by favoring idle agents, but use your judgment: if a busy agent has critical context or expertise that makes them significantly better suited for the task, it may be worth assigning to them
+2. Match agent class to task type (scout=explore, builder=code, debugger=fix, architect=plan, warrior=refactor, support=docs/tests)
+3. **Prefer lower context usage** - Agents with lower contextPercent can work faster and more efficiently. When choosing between agents of similar capability, prefer the one with lower context usage. Avoid agents with >80% context usage entirely
+4. Consider recent work context - an agent who just worked on related code may be more efficient
+5. For general questions or status queries, pick any idle agent
 
 ## Required Output Format (JSON only, no other text):
 {"selectedAgentId":"<agent id>","selectedAgentName":"<agent name>","reasoning":"<why this agent>","alternativeAgents":[],"confidence":"medium"}`;
 
 function buildDelegationPrompt(command: string, contexts: SubordinateContext[]): string {
+  // Sanitize all string fields to prevent invalid Unicode surrogates
   const subordinatesData = contexts.map(ctx => ({
     id: ctx.id,
-    name: ctx.name,
+    name: sanitizeUnicode(ctx.name),
     class: ctx.class,
     status: ctx.status,
-    currentTask: ctx.currentTask || 'None',
-    lastAssignedTask: ctx.lastAssignedTask ? truncate(ctx.lastAssignedTask, 200) : 'None',
-    recentSupervisorSummary: ctx.recentSupervisorSummary || 'No recent analysis',
+    currentTask: sanitizeUnicode(ctx.currentTask || 'None'),
+    lastAssignedTask: ctx.lastAssignedTask ? sanitizeUnicode(truncate(ctx.lastAssignedTask, 200)) : 'None',
+    recentSupervisorSummary: sanitizeUnicode(ctx.recentSupervisorSummary || 'No recent analysis'),
     contextPercent: ctx.contextPercent,
     tokensUsed: ctx.tokensUsed,
   }));
 
   return DELEGATION_PROMPT
     .replace('{{SUBORDINATES_DATA}}', JSON.stringify(subordinatesData, null, 2))
-    .replace('{{USER_COMMAND}}', command);
+    .replace('{{USER_COMMAND}}', sanitizeUnicode(command));
 }
 
 async function callClaudeForDelegation(prompt: string): Promise<string> {
@@ -524,11 +575,13 @@ async function callClaudeForDelegation(prompt: string): Promise<string> {
 
     childProcess.on('spawn', () => {
       log.log?.(' [delegation] Process spawned, sending prompt...');
+      // Sanitize prompt to remove invalid Unicode surrogates that break JSON
+      const sanitizedPrompt = sanitizeUnicode(prompt);
       const stdinMessage = JSON.stringify({
         type: 'user',
         message: {
           role: 'user',
-          content: prompt,
+          content: sanitizedPrompt,
         },
       });
       log.log?.(' [delegation] stdin message:', stdinMessage.substring(0, 200));

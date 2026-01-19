@@ -16,6 +16,70 @@ import { createLogger } from '../utils/logger.js';
 
 const log = createLogger('Backend');
 
+/**
+ * Sanitize a string by removing invalid Unicode surrogate pairs.
+ * This fixes "no low surrogate in string" JSON errors that occur when
+ * strings contain unpaired high surrogates (0xD800-0xDBFF without matching 0xDC00-0xDFFF).
+ * Also handles JSON-escaped surrogates like \ud83d that lack their low surrogate pair.
+ */
+function sanitizeUnicode(str: string): string {
+  // First, handle JSON-escaped surrogates (e.g., \ud83d without \udc00-\udfff following)
+  // High surrogate: \uD800-\uDBFF -> \u[dD][89aAbB][0-9a-fA-F]{2}
+  // Low surrogate: \uDC00-\uDFFF -> \u[dD][cCdDeEfF][0-9a-fA-F]{2}
+  const highPattern = /\\u[dD][89aAbB][0-9a-fA-F]{2}/g;
+  const lowPattern = /\\u[dD][cCdDeEfF][0-9a-fA-F]{2}/;
+
+  // Replace unpaired JSON-escaped surrogates
+  let sanitized = str.replace(highPattern, (match, offset) => {
+    // Check if followed by a low surrogate escape
+    const afterMatch = str.slice(offset + match.length);
+    if (lowPattern.test(afterMatch.slice(0, 6))) {
+      return match; // Valid pair, keep it
+    }
+    return '\\ufffd'; // Replace unpaired high surrogate
+  });
+
+  // Also replace orphan low surrogates (not preceded by high)
+  sanitized = sanitized.replace(/\\u[dD][cCdDeEfF][0-9a-fA-F]{2}/g, (match, offset) => {
+    // Check if preceded by a high surrogate
+    const beforeMatch = sanitized.slice(Math.max(0, offset - 6), offset);
+    if (/\\u[dD][89aAbB][0-9a-fA-F]{2}$/.test(beforeMatch)) {
+      return match; // Valid pair, keep it
+    }
+    return '\\ufffd'; // Replace orphan low surrogate
+  });
+
+  // Then handle raw Unicode surrogates at character level
+  let result = '';
+  for (let i = 0; i < sanitized.length; i++) {
+    const code = sanitized.charCodeAt(i);
+
+    // Check if this is a high surrogate (0xD800-0xDBFF)
+    if (code >= 0xD800 && code <= 0xDBFF) {
+      // Check if next char is a valid low surrogate
+      const nextCode = sanitized.charCodeAt(i + 1);
+      if (nextCode >= 0xDC00 && nextCode <= 0xDFFF) {
+        // Valid surrogate pair - keep both
+        result += sanitized[i] + sanitized[i + 1];
+        i++; // Skip the low surrogate since we already added it
+      } else {
+        // Unpaired high surrogate - replace with replacement char
+        result += '\uFFFD';
+      }
+    }
+    // Check if this is a low surrogate without preceding high surrogate
+    else if (code >= 0xDC00 && code <= 0xDFFF) {
+      // Unpaired low surrogate - replace with replacement char
+      result += '\uFFFD';
+    }
+    else {
+      // Normal character
+      result += sanitized[i];
+    }
+  }
+  return result;
+}
+
 export class ClaudeBackend implements CLIBackend {
   readonly name = 'claude';
 
@@ -36,36 +100,16 @@ export class ClaudeBackend implements CLIBackend {
       args.push('--resume', config.sessionId);
     }
 
-    // Permission mode - bypass for autonomous agents, interactive uses hooks
+    // Permission mode - bypass for autonomous agents, interactive uses acceptEdits mode
     if (config.permissionMode === 'bypass') {
       args.push('--dangerously-skip-permissions');
     } else if (config.permissionMode === 'interactive') {
-      // For interactive mode, configure the PreToolUse hook to ask for permission
-      // The hook script calls the Tide Commander server which shows UI for approval
-      const hookPath = path.join(process.cwd(), 'hooks', 'permission-hook.sh');
-      const hookSettings = {
-        hooks: {
-          PreToolUse: [
-            {
-              hooks: [
-                {
-                  type: 'command',
-                  command: hookPath,
-                  timeout: 300, // 5 minute timeout for user response
-                },
-              ],
-            },
-          ],
-        },
-      };
-      // Write settings to a temp file to avoid shell escaping issues
-      const tideDataDir = path.join(os.homedir(), '.tide-commander');
-      if (!fs.existsSync(tideDataDir)) {
-        fs.mkdirSync(tideDataDir, { recursive: true });
-      }
-      const settingsPath = path.join(tideDataDir, 'hook-settings.json');
-      fs.writeFileSync(settingsPath, JSON.stringify(hookSettings, null, 2));
-      args.push('--settings', settingsPath);
+      // For interactive mode, use 'acceptEdits' which:
+      // - Auto-accepts file edits/writes within the project directory
+      // - Denies operations outside the project directory
+      // - Provides a balance between usability and safety
+      // Permission denials are reported in the result event's permission_denials array
+      args.push('--permission-mode', 'acceptEdits');
     }
 
     // Model selection
@@ -199,6 +243,18 @@ export class ClaudeBackend implements CLIBackend {
     log.log(`parseResultEvent: usage=${JSON.stringify(event.usage)}, cost=${event.total_cost_usd}`);
     // Extract result text if available (used for boss delegation parsing)
     const resultText = typeof event.result === 'string' ? event.result : undefined;
+
+    // Extract permission denials if any
+    const permissionDenials = event.permission_denials?.map(denial => ({
+      toolName: denial.tool_name,
+      toolUseId: denial.tool_use_id,
+      toolInput: denial.tool_input,
+    }));
+
+    if (permissionDenials && permissionDenials.length > 0) {
+      log.log(`parseResultEvent: ${permissionDenials.length} permission denial(s)`);
+    }
+
     return {
       type: 'step_complete',
       durationMs: event.duration_ms,
@@ -212,6 +268,7 @@ export class ClaudeBackend implements CLIBackend {
           }
         : undefined,
       resultText,
+      permissionDenials,
     };
   }
 
@@ -318,11 +375,13 @@ export class ClaudeBackend implements CLIBackend {
    * Format prompt as stdin input for Claude CLI (stream-json format)
    */
   formatStdinInput(prompt: string): string {
+    // Sanitize prompt to remove invalid Unicode surrogates that break JSON
+    const sanitizedPrompt = sanitizeUnicode(prompt);
     return JSON.stringify({
       type: 'user',
       message: {
         role: 'user',
-        content: prompt,
+        content: sanitizedPrompt,
       },
     });
   }

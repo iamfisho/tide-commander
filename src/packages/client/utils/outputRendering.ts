@@ -44,6 +44,20 @@ export function getTodoStatusIcon(status: string): string {
 }
 
 /**
+ * Format timestamp for display (HH:MM:SS in 24h format)
+ * Accepts either a number (epoch ms) or ISO string
+ */
+export function formatTimestamp(timestamp: number | string): string {
+  const date = typeof timestamp === 'string' ? new Date(timestamp) : new Date(timestamp);
+  return date.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+}
+
+/**
  * Truncate a string with ellipsis if it exceeds maxLength
  */
 export function truncateString(str: string, maxLength: number): string {

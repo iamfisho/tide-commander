@@ -228,38 +228,53 @@ function handleClientMessage(ws: WebSocket, message: ClientMessage): void {
       break;
 
     case 'kill_agent':
-      claudeService.stopAgent(message.payload.agentId).then(() => {
-        // Unlink from boss/subordinates before deleting
-        unlinkAgentFromBossHierarchy(message.payload.agentId);
-        agentService.deleteAgent(message.payload.agentId);
-      });
+      {
+        const agent = agentService.getAgent(message.payload.agentId);
+        log.log(`🗑️ [KILL_AGENT] Agent ${agent?.name || message.payload.agentId}: User requested agent deletion`);
+        claudeService.stopAgent(message.payload.agentId).then(() => {
+          // Unlink from boss/subordinates before deleting
+          unlinkAgentFromBossHierarchy(message.payload.agentId);
+          agentService.deleteAgent(message.payload.agentId);
+          log.log(`🗑️ [KILL_AGENT] Agent ${agent?.name || message.payload.agentId}: Agent deleted successfully`);
+        });
+      }
       break;
 
     case 'stop_agent':
       // Stop current operation but keep agent alive
-      claudeService.stopAgent(message.payload.agentId).then(() => {
-        agentService.updateAgent(message.payload.agentId, {
-          status: 'idle',
-          currentTask: undefined,
-          currentTool: undefined,
+      {
+        const agent = agentService.getAgent(message.payload.agentId);
+        log.log(`🛑 [STOP_AGENT] Agent ${agent?.name || message.payload.agentId}: User requested operation cancellation`);
+        claudeService.stopAgent(message.payload.agentId).then(() => {
+          agentService.updateAgent(message.payload.agentId, {
+            status: 'idle',
+            currentTask: undefined,
+            currentTool: undefined,
+          });
+          sendActivity(message.payload.agentId, 'Operation cancelled');
+          log.log(`🛑 [STOP_AGENT] Agent ${agent?.name || message.payload.agentId}: Operation cancelled, agent now idle`);
         });
-        sendActivity(message.payload.agentId, 'Operation cancelled');
-      });
+      }
       break;
 
     case 'clear_context':
       // Clear agent's context - force new session on next command
-      claudeService.stopAgent(message.payload.agentId).then(() => {
-        agentService.updateAgent(message.payload.agentId, {
-          status: 'idle',
-          currentTask: undefined,
-          currentTool: undefined,
-          sessionId: undefined, // Clear session to force new one
-          tokensUsed: 0,
-          contextUsed: 0,
+      {
+        const agent = agentService.getAgent(message.payload.agentId);
+        log.log(`🧹 [CLEAR_CONTEXT] Agent ${agent?.name || message.payload.agentId}: User requested context clear`);
+        claudeService.stopAgent(message.payload.agentId).then(() => {
+          agentService.updateAgent(message.payload.agentId, {
+            status: 'idle',
+            currentTask: undefined,
+            currentTool: undefined,
+            sessionId: undefined, // Clear session to force new one
+            tokensUsed: 0,
+            contextUsed: 0,
+          });
+          sendActivity(message.payload.agentId, 'Context cleared - new session on next command');
+          log.log(`🧹 [CLEAR_CONTEXT] Agent ${agent?.name || message.payload.agentId}: Context cleared, session reset`);
         });
-        sendActivity(message.payload.agentId, 'Context cleared - new session on next command');
-      });
+      }
       break;
 
     case 'collapse_context':

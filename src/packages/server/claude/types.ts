@@ -34,6 +34,11 @@ export interface StandardEvent {
   tools?: string[];
   errorMessage?: string;
   resultText?: string;  // Full result text from result event (for boss delegation parsing)
+  permissionDenials?: Array<{  // Tools that were denied permission (from result event)
+    toolName: string;
+    toolUseId: string;
+    toolInput: Record<string, unknown>;
+  }>;
 }
 
 // Configuration for backend
@@ -85,6 +90,11 @@ export interface ClaudeRawEvent {
     };
   };
   error?: string;
+  permission_denials?: Array<{
+    tool_name: string;
+    tool_use_id: string;
+    tool_input: Record<string, unknown>;
+  }>;
 }
 
 // Backend interface (allows for multiple CLI backends)

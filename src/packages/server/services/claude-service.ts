@@ -310,8 +310,19 @@ export async function sendCommand(agentId: string, command: string, systemPrompt
 }
 
 export async function stopAgent(agentId: string): Promise<void> {
-  if (!runner) return;
+  const agent = agentService.getAgent(agentId);
+  const agentName = agent?.name || agentId;
+  const prevStatus = agent?.status || 'unknown';
+
+  log.log(`🛑 [STOP REQUEST] Agent ${agentName} (${agentId}): Stop requested, current status=${prevStatus}`);
+
+  if (!runner) {
+    log.log(`🛑 [STOP REQUEST] Agent ${agentName}: Runner not initialized, cannot stop`);
+    return;
+  }
+
   await runner.stop(agentId);
+  log.log(`🛑 [STOP REQUEST] Agent ${agentName}: Stop sequence initiated`);
 }
 
 export function isAgentRunning(agentId: string): boolean {

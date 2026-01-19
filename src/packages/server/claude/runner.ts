@@ -62,8 +62,6 @@ export class ClaudeRunner {
         ...process.env,
         LANG: 'en_US.UTF-8',
         LC_ALL: 'en_US.UTF-8',
-        // Pass server URL for permission hooks in interactive mode
-        TIDE_SERVER: `http://localhost:${process.env.TIDE_PORT || 5174}`,
       },
       shell: true,
       detached: true,
@@ -86,20 +84,39 @@ export class ClaudeRunner {
 
     // Handle process exit
     childProcess.on('close', (code, signal) => {
-      log.log(` Process exited for ${agentId} with code=${code} signal=${signal}`);
+      const wasTracked = this.activeProcesses.has(agentId);
       this.activeProcesses.delete(agentId);
+
+      // Determine exit type for logging
+      if (signal) {
+        // Process was killed by a signal
+        if (signal === 'SIGINT') {
+          log.log(`🛑 [EXIT] Agent ${agentId}: Process terminated by SIGINT (user interrupt), pid was ${childProcess.pid}`);
+        } else if (signal === 'SIGTERM') {
+          log.log(`🛑 [EXIT] Agent ${agentId}: Process terminated by SIGTERM (stop request), pid was ${childProcess.pid}`);
+        } else if (signal === 'SIGKILL') {
+          log.log(`🛑 [EXIT] Agent ${agentId}: Process force-killed by SIGKILL, pid was ${childProcess.pid}`);
+        } else {
+          log.log(`⚠️ [EXIT] Agent ${agentId}: Process killed by signal ${signal}, pid was ${childProcess.pid}`);
+        }
+      } else if (code === 0) {
+        log.log(`✅ [EXIT] Agent ${agentId}: Process completed successfully (exit code 0), pid was ${childProcess.pid}`);
+      } else {
+        log.log(`❌ [EXIT] Agent ${agentId}: Process exited with error code ${code}, pid was ${childProcess.pid}${!wasTracked ? ' (unexpected - was not being tracked)' : ''}`);
+      }
+
       this.callbacks.onComplete(agentId, code === 0);
     });
 
     childProcess.on('error', (err) => {
-      log.error(` Process spawn error for ${agentId}:`, err);
+      log.error(`❌ [SPAWN ERROR] Agent ${agentId}: Failed to spawn process: ${err.message}`);
       this.activeProcesses.delete(agentId);
       this.callbacks.onError(agentId, err.message);
     });
 
     // Log process start
     childProcess.on('spawn', () => {
-      log.log(` Process spawned for ${agentId} (pid: ${childProcess.pid})`);
+      log.log(`🚀 [SPAWN] Agent ${agentId}: Process started with pid ${childProcess.pid}`);
     });
 
     // Send the prompt via stdin (keep stdin open for additional messages)
@@ -161,23 +178,24 @@ export class ClaudeRunner {
   interrupt(agentId: string): boolean {
     const activeProcess = this.activeProcesses.get(agentId);
     if (!activeProcess) {
-      log.log(` No active process to interrupt for agent ${agentId}`);
+      log.log(`⚡ [INTERRUPT] Agent ${agentId}: No active process to interrupt`);
       return false;
     }
 
     const pid = activeProcess.process.pid;
     if (!pid) {
-      log.log(` No PID for agent ${agentId}`);
+      log.log(`⚡ [INTERRUPT] Agent ${agentId}: No PID available`);
       return false;
     }
 
-    log.log(` Sending SIGINT (interrupt) to agent ${agentId} (pid: ${pid})`);
+    log.log(`⚡ [INTERRUPT] Agent ${agentId}: Sending SIGINT to pid ${pid} (graceful interrupt)`);
     try {
       // Send SIGINT to the process (like Ctrl+C)
       activeProcess.process.kill('SIGINT');
+      log.log(`⚡ [INTERRUPT] Agent ${agentId}: SIGINT sent successfully`);
       return true;
     } catch (e) {
-      log.error(` Failed to interrupt agent ${agentId}:`, e);
+      log.error(`⚡ [INTERRUPT] Agent ${agentId}: Failed to send SIGINT:`, e);
       return false;
     }
   }
@@ -341,60 +359,64 @@ export class ClaudeRunner {
    */
   async stop(agentId: string): Promise<void> {
     const activeProcess = this.activeProcesses.get(agentId);
-    if (activeProcess) {
-      const pid = activeProcess.process.pid;
-      log.log(` Stopping process for ${agentId} (pid: ${pid})`);
-
-      // Remove from tracking immediately
-      this.activeProcesses.delete(agentId);
-
-      // First, try sending SIGINT (Ctrl+C) which Claude CLI handles gracefully
-      if (pid) {
-        try {
-          // Send SIGINT to process group (like Ctrl+C)
-          process.kill(-pid, 'SIGINT');
-          log.log(` Sent SIGINT to process group ${pid}`);
-        } catch (e) {
-          log.log(` Process group SIGINT failed, trying direct`);
-        }
-      }
-
-      // Also send SIGINT to the main process
-      try {
-        activeProcess.process.kill('SIGINT');
-      } catch (e) {
-        // Ignore if already dead
-      }
-
-      // Notify that the process was stopped (so UI updates)
-      this.callbacks.onComplete(agentId, false);
-
-      // Give it a moment to terminate gracefully with SIGINT, then escalate to SIGTERM
-      setTimeout(() => {
-        try {
-          if (pid && !activeProcess.process.killed) {
-            log.log(` Escalating to SIGTERM for process ${pid}`);
-            process.kill(-pid, 'SIGTERM');
-            activeProcess.process.kill('SIGTERM');
-          }
-        } catch (e) {
-          // Process already dead, ignore
-        }
-      }, 500);
-
-      // Final resort: force kill with SIGKILL
-      setTimeout(() => {
-        try {
-          if (pid && !activeProcess.process.killed) {
-            log.log(` Force killing process ${pid} with SIGKILL`);
-            process.kill(-pid, 'SIGKILL');
-            activeProcess.process.kill('SIGKILL');
-          }
-        } catch (e) {
-          // Process already dead, ignore
-        }
-      }, 1500);
+    if (!activeProcess) {
+      log.log(`🛑 [STOP] Agent ${agentId}: No active process to stop`);
+      return;
     }
+
+    const pid = activeProcess.process.pid;
+    log.log(`🛑 [STOP] Agent ${agentId}: Initiating stop sequence for pid ${pid}`);
+
+    // Remove from tracking immediately
+    this.activeProcesses.delete(agentId);
+
+    // First, try sending SIGINT (Ctrl+C) which Claude CLI handles gracefully
+    if (pid) {
+      try {
+        // Send SIGINT to process group (like Ctrl+C)
+        process.kill(-pid, 'SIGINT');
+        log.log(`🛑 [STOP] Agent ${agentId}: Sent SIGINT to process group ${pid}`);
+      } catch (e) {
+        log.log(`🛑 [STOP] Agent ${agentId}: Process group SIGINT failed, trying direct signal`);
+      }
+    }
+
+    // Also send SIGINT to the main process
+    try {
+      activeProcess.process.kill('SIGINT');
+      log.log(`🛑 [STOP] Agent ${agentId}: Sent direct SIGINT to process`);
+    } catch (e) {
+      // Ignore if already dead
+    }
+
+    // Notify that the process was stopped (so UI updates)
+    this.callbacks.onComplete(agentId, false);
+
+    // Give it a moment to terminate gracefully with SIGINT, then escalate to SIGTERM
+    setTimeout(() => {
+      try {
+        if (pid && !activeProcess.process.killed) {
+          log.log(`🛑 [STOP] Agent ${agentId}: Escalating to SIGTERM for pid ${pid} (process did not exit gracefully)`);
+          process.kill(-pid, 'SIGTERM');
+          activeProcess.process.kill('SIGTERM');
+        }
+      } catch (e) {
+        // Process already dead, ignore
+      }
+    }, 500);
+
+    // Final resort: force kill with SIGKILL
+    setTimeout(() => {
+      try {
+        if (pid && !activeProcess.process.killed) {
+          log.log(`🛑 [STOP] Agent ${agentId}: Force killing pid ${pid} with SIGKILL (process unresponsive)`);
+          process.kill(-pid, 'SIGKILL');
+          activeProcess.process.kill('SIGKILL');
+        }
+      } catch (e) {
+        // Process already dead, ignore
+      }
+    }, 1500);
   }
 
   /**
