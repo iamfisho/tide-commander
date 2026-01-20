@@ -60,6 +60,7 @@ export interface CustomAgentDefinition {
 
 // Configuration for backend
 export interface BackendConfig {
+  agentId?: string;  // Used for prompt file naming
   sessionId?: string;
   model?: string;
   workingDir: string;

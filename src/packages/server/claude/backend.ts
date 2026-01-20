@@ -16,6 +16,22 @@ import { createLogger, sanitizeUnicode } from '../utils/index.js';
 
 const log = createLogger('Backend');
 
+/**
+ * Write prompt content to a temp file for use with --system-prompt-file / --append-system-prompt-file
+ * This avoids issues with multiline prompts and shell escaping
+ */
+function writePromptToFile(prompt: string, agentId?: string): string {
+  const tideDataDir = path.join(os.homedir(), '.tide-commander', 'prompts');
+  if (!fs.existsSync(tideDataDir)) {
+    fs.mkdirSync(tideDataDir, { recursive: true });
+  }
+  const filename = agentId ? `prompt-${agentId}.md` : `prompt-${Date.now()}.md`;
+  const promptPath = path.join(tideDataDir, filename);
+  fs.writeFileSync(promptPath, prompt, 'utf-8');
+  log.log(` Wrote prompt (${prompt.length} chars) to ${promptPath}`);
+  return promptPath;
+}
+
 export class ClaudeBackend implements CLIBackend {
   readonly name = 'claude';
 
@@ -24,6 +40,8 @@ export class ClaudeBackend implements CLIBackend {
    */
   buildArgs(config: BackendConfig): string[] {
     const args: string[] = [];
+
+    log.log(` buildArgs called: sessionId=${config.sessionId ? 'yes' : 'no'}, customAgent=${config.customAgent ? config.customAgent.name : 'no'}, systemPrompt=${config.systemPrompt ? 'yes' : 'no'}`);
 
     // Core output format for streaming JSON
     args.push('--print');
@@ -79,29 +97,27 @@ export class ClaudeBackend implements CLIBackend {
     }
 
     // Custom agent instructions (class instructions + skills)
-    // Pass the prompt content directly via --system-prompt
+    // Write prompt to file and use --append-system-prompt-file
+    // This appends to Claude's default system prompt rather than replacing it
     if (config.customAgent) {
-      const prompt = config.customAgent.definition.prompt;
-      if (config.sessionId) {
-        // Resuming - append to existing system prompt
-        args.push('--append-system-prompt', prompt);
+      const prompt = config.customAgent.definition?.prompt;
+      log.log(` customAgent detected: name=${config.customAgent.name}, hasDefinition=${!!config.customAgent.definition}, prompt=${prompt ? `${prompt.length} chars` : 'EMPTY/UNDEFINED'}`);
+      if (prompt) {
+        const promptFile = writePromptToFile(prompt, config.customAgent.name);
+        log.log(` Adding customAgent prompt via file (${prompt.length} chars)`);
+        args.push('--append-system-prompt-file', promptFile);
       } else {
-        // New session - set the system prompt
-        args.push('--system-prompt', prompt);
+        log.log(` WARNING: customAgent has no prompt!`);
       }
     }
 
     // System prompt for boss agents or custom context
-    // Use --append-system-prompt when resuming (--system-prompt is ignored on resume)
-    // Use --system-prompt for new sessions
+    // Write prompt to file and use --append-system-prompt-file
+    // This appends to Claude's default system prompt rather than replacing it
     if (config.systemPrompt && !config.customAgent) {
-      if (config.sessionId) {
-        // Resuming - append to existing system prompt
-        args.push('--append-system-prompt', config.systemPrompt);
-      } else {
-        // New session - set the system prompt
-        args.push('--system-prompt', config.systemPrompt);
-      }
+      const promptFile = writePromptToFile(config.systemPrompt, config.agentId);
+      log.log(` Adding systemPrompt via file (${config.systemPrompt.length} chars)`);
+      args.push('--append-system-prompt-file', promptFile);
     }
 
     return args;

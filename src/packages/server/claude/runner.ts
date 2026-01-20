@@ -339,7 +339,8 @@ export class ClaudeRunner {
 
     // Build CLI arguments
     // If forceNewSession is true, don't pass sessionId (start fresh)
-    const args = this.backend.buildArgs({
+    const backendConfig = {
+      agentId,
       sessionId: forceNewSession ? undefined : sessionId,
       model,
       workingDir,
@@ -347,7 +348,9 @@ export class ClaudeRunner {
       useChrome,
       systemPrompt,
       customAgent,
-    });
+    };
+    log.log(` Building args with config: sessionId=${sessionId}, systemPrompt=${systemPrompt ? 'yes' : 'no'}, customAgent=${customAgent ? customAgent.name : 'no'}`);
+    const args = this.backend.buildArgs(backendConfig);
 
     // Get executable path
     const executable = this.backend.getExecutablePath();
@@ -355,21 +358,20 @@ export class ClaudeRunner {
     log.log(` Starting: ${executable} ${args.join(' ')}`);
     log.log(` Working dir: ${workingDir}`);
 
-    // Spawn process with pipes for I/O
+    // Spawn process with its own process group (detached: true)
+    // Note: shell: false is required to properly pass arguments with special characters
     const childProcess = spawn(executable, args, {
       cwd: workingDir,
       env: {
         ...process.env,
         LANG: 'en_US.UTF-8',
         LC_ALL: 'en_US.UTF-8',
+        // Pass server URL for permission hooks in interactive mode
+        TIDE_SERVER: `http://localhost:${process.env.TIDE_PORT || process.env.PORT || 5174}`,
       },
       shell: false,
       detached: true,
-      stdio: ['pipe', 'pipe', 'pipe'],
     });
-
-    // unref() allows parent to exit without waiting for child
-    childProcess.unref();
 
     // Track the active process with the request for potential auto-restart
     const activeProcess: ActiveProcess = {
@@ -757,10 +759,8 @@ export class ClaudeRunner {
 
   /**
    * Stop all running processes
-   * @param force - If true, actually kill processes. If false (default), just clear tracking.
-   *                This allows processes to continue running independently when commander shuts down.
    */
-  async stopAll(force = false): Promise<void> {
+  async stopAll(): Promise<void> {
     // Stop the persist timer
     if (this.persistTimer) {
       clearInterval(this.persistTimer);
@@ -776,20 +776,13 @@ export class ClaudeRunner {
     // Disable auto-restart during shutdown
     this.autoRestartEnabled = false;
 
-    if (force) {
-      // Actually kill all processes
-      for (const [agentId] of this.activeProcesses) {
-        await this.stop(agentId);
-      }
-      // Clear the persisted processes file since we killed them all
-      clearRunningProcesses();
-    } else {
-      // Just clear tracking - processes continue running independently
-      // Persist current state so next commander instance knows about them
-      this.persistRunningProcesses();
-      log.log(`🔄 Clearing process tracking for ${this.activeProcesses.size} agents (processes will continue running)`);
-      this.activeProcesses.clear();
+    // Stop all tracked processes
+    for (const [agentId] of this.activeProcesses) {
+      await this.stop(agentId);
     }
+
+    // Clear the persisted processes file
+    clearRunningProcesses();
 
     // Clear stderr tracking
     this.lastStderr.clear();

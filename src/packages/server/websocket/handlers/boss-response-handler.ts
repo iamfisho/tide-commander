@@ -6,7 +6,7 @@
 import type { AgentClass, DelegationDecision, ServerMessage } from '../../../shared/types.js';
 import { agentService, claudeService, bossService } from '../../services/index.js';
 import { logger } from '../../utils/index.js';
-import { getLastBossCommand } from './command-handler.js';
+import { getLastBossCommand, buildCustomAgentConfig } from './command-handler.js';
 
 const log = logger.ws;
 
@@ -93,7 +93,10 @@ export function parseBossDelegation(
 
       if (decision.selectedAgentId && decision.userCommand) {
         log.log(`🟢🟢🟢 SENDING COMMAND to ${decision.selectedAgentName} (${decision.selectedAgentId}): "${decision.userCommand.slice(0, 50)}..."`);
-        claudeService.sendCommand(decision.selectedAgentId, decision.userCommand)
+        // Build customAgentConfig for the target agent to ensure it gets its class instructions
+        const targetAgent = agentService.getAgent(decision.selectedAgentId);
+        const customAgentConfig = targetAgent ? buildCustomAgentConfig(decision.selectedAgentId, targetAgent.class) : undefined;
+        claudeService.sendCommand(decision.selectedAgentId, decision.userCommand, undefined, undefined, customAgentConfig)
           .catch(err => {
             log.error(` Failed to auto-forward command to ${decision.selectedAgentName}:`, err);
           });

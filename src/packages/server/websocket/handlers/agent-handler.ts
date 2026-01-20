@@ -159,7 +159,7 @@ export async function handleStopAgent(
   payload: { agentId: string }
 ): Promise<void> {
   const agent = agentService.getAgent(payload.agentId);
-  log.log(`Agent ${agent?.name || payload.agentId}: User requested stop (Ctrl+C)`);
+  log.log(`Agent ${agent?.name || payload.agentId}: Stop requested`);
 
   await claudeService.stopAgent(payload.agentId);
   agentService.updateAgent(payload.agentId, {
@@ -169,7 +169,7 @@ export async function handleStopAgent(
   });
   ctx.sendActivity(payload.agentId, 'Operation cancelled');
 
-  log.log(`Agent ${agent?.name || payload.agentId}: Stopped, now idle`);
+  log.log(`Agent ${agent?.name || payload.agentId}: Stopped successfully, agent now idle`);
 }
 
 /**

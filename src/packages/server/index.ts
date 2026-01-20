@@ -69,24 +69,11 @@ async function main(): Promise<void> {
   });
 
   // Graceful shutdown
-  // By default, don't kill Claude processes - they should continue running independently
-  // Use SIGTERM (kill) to force-kill all processes, SIGINT (Ctrl+C) leaves them running
   process.on('SIGINT', async () => {
-    logger.server.warn('Shutting down (SIGINT)... Claude processes will continue running');
+    logger.server.warn('Shutting down...');
     supervisorService.shutdown();
     bossService.shutdown();
-    await claudeService.shutdown(false); // Don't kill processes - they continue independently
-    agentService.persistAgents();
-    server.close();
-    process.exit(0);
-  });
-
-  // SIGTERM is used for force shutdown - kill all processes
-  process.on('SIGTERM', async () => {
-    logger.server.warn('Force shutting down (SIGTERM)... Killing all Claude processes');
-    supervisorService.shutdown();
-    bossService.shutdown();
-    await claudeService.shutdown(true); // Force kill all processes
+    await claudeService.shutdown();
     agentService.persistAgents();
     server.close();
     process.exit(0);

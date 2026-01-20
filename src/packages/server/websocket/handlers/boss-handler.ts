@@ -6,6 +6,7 @@
 import { agentService, claudeService, bossService } from '../../services/index.js';
 import { createLogger } from '../../utils/index.js';
 import type { HandlerContext } from './types.js';
+import { buildCustomAgentConfig } from './command-handler.js';
 
 const log = createLogger('BossHandler');
 
@@ -119,9 +120,11 @@ export async function handleSendBossCommand(
   try {
     const decision = await bossService.delegateCommand(bossId, command);
 
-    // Send the command to the selected subordinate
+    // Send the command to the selected subordinate with its class instructions
     try {
-      await claudeService.sendCommand(decision.selectedAgentId, command);
+      const targetAgent = agentService.getAgent(decision.selectedAgentId);
+      const customAgentConfig = targetAgent ? buildCustomAgentConfig(decision.selectedAgentId, targetAgent.class) : undefined;
+      await claudeService.sendCommand(decision.selectedAgentId, command, undefined, undefined, customAgentConfig);
       ctx.sendActivity(bossId, `Delegated to ${decision.selectedAgentName}`);
     } catch (err: any) {
       log.error(' Failed to send delegated command:', err);

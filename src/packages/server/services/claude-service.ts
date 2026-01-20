@@ -5,9 +5,12 @@
 
 import { ClaudeRunner, StandardEvent } from '../claude/index.js';
 import { parseContextOutput } from '../claude/backend.js';
+import { getSessionActivityStatus } from '../claude/session-loader.js';
 import type { CustomAgentDefinition } from '../claude/types.js';
 import * as agentService from './agent-service.js';
 import * as supervisorService from './supervisor-service.js';
+import * as customClassService from './custom-class-service.js';
+import * as skillService from './skill-service.js';
 import { loadRunningProcesses, isProcessRunning } from '../data/index.js';
 import { logger } from '../utils/logger.js';
 import type { ContextStats } from '../../shared/types.js';
@@ -79,13 +82,13 @@ export function init(): void {
  *                        If false (default), processes continue running independently.
  *                        Set to true for clean shutdown, false for commander restart/crash recovery.
  */
-export async function shutdown(killProcesses = false): Promise<void> {
+export async function shutdown(): Promise<void> {
   if (statusSyncTimer) {
     clearInterval(statusSyncTimer);
     statusSyncTimer = null;
   }
   if (runner) {
-    await runner.stopAll(killProcesses);
+    await runner.stopAll();
   }
 }
 
@@ -347,12 +350,18 @@ async function executeCommand(agentId: string, command: string, systemPrompt?: s
   const prevStatus = agent.status;
   log.log(`🟢 [${agent.name}] status: ${prevStatus} → working (command started)`);
 
-  const updated = agentService.updateAgent(agentId, {
-    status: 'working',
+  // Don't update lastAssignedTask for system messages (like auto-resume) to avoid recursive loops
+  const isSystemMessage = command.startsWith('[System:');
+  const updateData: Partial<Parameters<typeof agentService.updateAgent>[1]> = {
+    status: 'working' as const,
     currentTask: command.substring(0, 100),
-    lastAssignedTask: command, // Store full command for supervisor context
-    lastAssignedTaskTime: Date.now(),
-  });
+  };
+  if (!isSystemMessage) {
+    updateData.lastAssignedTask = command;
+    updateData.lastAssignedTaskTime = Date.now();
+  }
+
+  const updated = agentService.updateAgent(agentId, updateData);
 
   await runner.run({
     agentId,
@@ -395,11 +404,16 @@ export async function sendCommand(agentId: string, command: string, systemPrompt
     if (sent) {
       log.log(` Sent message to running process for ${agentId}: ${command.substring(0, 50)}...`);
       notifyCommandStarted(agentId, command);
-      agentService.updateAgent(agentId, {
+      // Don't update lastAssignedTask for system messages (like auto-resume)
+      const isSystemMessage = command.startsWith('[System:');
+      const updateData: Record<string, unknown> = {
         taskCount: (agent.taskCount || 0) + 1,
-        lastAssignedTask: command,
-        lastAssignedTaskTime: Date.now(),
-      });
+      };
+      if (!isSystemMessage) {
+        updateData.lastAssignedTask = command;
+        updateData.lastAssignedTaskTime = Date.now();
+      }
+      agentService.updateAgent(agentId, updateData);
       return;
     }
     // If sending failed (process died), fall through to start new process
@@ -460,17 +474,14 @@ function checkForOrphanedProcess(agentId: string): boolean {
 }
 
 /**
- * Sync agent status with actual process state
+ * Sync agent status with actual process state and session activity
  * Called on startup and client reconnection to ensure UI shows correct status
  *
- * SIMPLIFIED RULES (to avoid false positives):
+ * The rules are:
  * 1. If we're tracking the process -> trust the current status
- * 2. If agent shows 'working' but no tracked process and no orphaned process -> set to idle
- * 3. If agent shows 'idle'/'error' but there's an orphaned process -> set to orphaned
- * 4. If agent shows 'orphaned' but no orphaned process -> set to idle
- *
- * NOTE: We removed the "session activity" check because it was causing false positives
- * (agents being marked as 'working' when they were actually idle)
+ * 2. If agent shows 'working' but no tracked process AND session is not active -> set to idle
+ * 3. If agent shows 'idle' but session is RECENTLY active (< 30s) with pending work -> set to working
+ *    (This handles server restart while Claude was processing)
  */
 export async function syncAgentStatus(agentId: string): Promise<void> {
   const agent = agentService.getAgent(agentId);
@@ -485,37 +496,41 @@ export async function syncAgentStatus(agentId: string): Promise<void> {
     return;
   }
 
-  // Check 2: Is there an orphaned Claude process for this agent?
-  // Only uses PID tracking - not general process discovery (to avoid false positives)
-  const hasOrphanedProcess = checkForOrphanedProcess(agentId);
+  // Check 2: Session file activity - is there recent pending work?
+  let isRecentlyActive = false;
+
+  if (agent.sessionId && agent.cwd) {
+    try {
+      // Use 30 second threshold - if Claude was actively working, session would be very recent
+      const activity = await getSessionActivityStatus(agent.cwd, agent.sessionId, 30);
+      if (activity) {
+        isRecentlyActive = activity.isActive; // Modified within 30s AND has pending work
+        log.log(`🔍 [${agent.name}] session activity: isActive=${activity.isActive}, lastMessage=${activity.lastMessageType}, hasPending=${activity.hasPendingWork}`);
+      }
+    } catch (err) {
+      log.log(`🔍 [${agent.name}] session activity check failed:`, err);
+    }
+  }
 
   // Debug log
-  log.log(`🔍 [${agent.name}] sync check: status=${agent.status}, tracked=${isTrackedProcess}, orphanedProcess=${hasOrphanedProcess}`);
+  log.log(`🔍 [${agent.name}] sync check: status=${agent.status}, tracked=${isTrackedProcess}, recentlyActive=${isRecentlyActive}`);
 
-  // Case 1: Agent shows 'working' but no tracked process and no orphaned process -> set to idle
-  if (agent.status === 'working' && !hasOrphanedProcess) {
-    log.log(`🔴 [${agent.name}] status: working → idle (no process tracked or orphaned)`);
+  // Case 1: Agent shows 'working' but no tracked process and not recently active -> set to idle
+  if (agent.status === 'working' && !isRecentlyActive) {
+    log.log(`🔴 [${agent.name}] status: working → idle (no process and not recently active)`);
     agentService.updateAgent(agentId, {
       status: 'idle',
       currentTask: undefined,
       currentTool: undefined,
     });
   }
-  // Case 2: Agent shows 'idle'/'error' but there's an orphaned Claude process -> set to orphaned
-  else if ((agent.status === 'idle' || agent.status === 'error') && hasOrphanedProcess) {
-    log.log(`⚠️ [${agent.name}] status: ${agent.status} → orphaned (found orphaned Claude process)`);
+  // Case 2: Agent shows 'idle' but session is recently active with pending work -> set to working
+  // This handles server restart while Claude was processing
+  else if (agent.status === 'idle' && isRecentlyActive) {
+    log.log(`🟢 [${agent.name}] status: idle → working (session recently active with pending work)`);
     agentService.updateAgent(agentId, {
-      status: 'orphaned',
-      currentTask: 'Orphaned process detected',
-    });
-  }
-  // Case 3: Agent shows 'orphaned' but no longer has an orphaned process -> set to idle
-  else if (agent.status === 'orphaned' && !hasOrphanedProcess) {
-    log.log(`🔄 [${agent.name}] status: orphaned → idle (process ended)`);
-    agentService.updateAgent(agentId, {
-      status: 'idle',
-      currentTask: undefined,
-      currentTool: undefined,
+      status: 'working',
+      currentTask: 'Processing...',
     });
   }
   // No change needed
@@ -531,4 +546,82 @@ export async function syncAllAgentStatus(): Promise<void> {
   const agents = agentService.getAllAgents();
   await Promise.all(agents.map(agent => syncAgentStatus(agent.id)));
   log.log(` Synced status for ${agents.length} agents`);
+}
+
+/**
+ * Auto-resume agents that were working before server restart
+ * Uses Claude's session persistence to continue where they left off
+ */
+export async function autoResumeWorkingAgents(): Promise<void> {
+  const agentsToResume = agentService.getAgentsToResume();
+
+  if (agentsToResume.length === 0) {
+    log.log(' No agents to auto-resume');
+    return;
+  }
+
+  log.log(`🔄 Auto-resuming ${agentsToResume.length} agent(s) that were working before restart...`);
+
+  for (const agentInfo of agentsToResume) {
+    try {
+      const agent = agentService.getAgent(agentInfo.id);
+      if (!agent) {
+        log.log(` Agent ${agentInfo.id} no longer exists, skipping auto-resume`);
+        continue;
+      }
+
+      // Don't resume if agent is already running somehow
+      if (runner?.isRunning(agentInfo.id)) {
+        log.log(` Agent ${agentInfo.name} is already running, skipping auto-resume`);
+        continue;
+      }
+
+      log.log(`🔄 Auto-resuming ${agentInfo.name}: continuing task "${agentInfo.lastTask}"`);
+
+      // Build customAgentConfig for the agent's class (same logic as command-handler)
+      // This ensures the agent gets its class instructions on auto-resume
+      let customAgentConfig: CustomAgentConfig | undefined;
+      if (agent.class && agent.class !== 'boss') {
+        const classInstructions = customClassService.getClassInstructions(agent.class);
+        const skillsContent = skillService.buildSkillPromptContent(agentInfo.id, agent.class);
+
+        let combinedPrompt = '';
+        if (classInstructions) {
+          combinedPrompt += classInstructions;
+        }
+        if (skillsContent) {
+          if (combinedPrompt) combinedPrompt += '\n\n';
+          combinedPrompt += skillsContent;
+        }
+
+        if (combinedPrompt) {
+          const customClass = customClassService.getCustomClass(agent.class);
+          customAgentConfig = {
+            name: customClass?.id || agent.class,
+            definition: {
+              description: customClass?.description || `Agent class: ${agent.class}`,
+              prompt: combinedPrompt,
+            },
+          };
+          log.log(`🔄 Auto-resume ${agentInfo.name}: built customAgentConfig with ${combinedPrompt.length} chars`);
+        }
+      }
+
+      // Send a continuation message to Claude
+      // Claude's session persistence will remember the context and continue
+      const resumeMessage = `[System: The commander server was restarted while you were working. Please continue with your previous task. Your last assigned task was: "${agentInfo.lastTask}"]`;
+
+      await sendCommand(agentInfo.id, resumeMessage, undefined, undefined, customAgentConfig);
+      log.log(`✅ Auto-resumed ${agentInfo.name}`);
+
+      // Small delay between agents to avoid overwhelming the system
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    } catch (err) {
+      log.error(` Failed to auto-resume ${agentInfo.name}:`, err);
+    }
+  }
+
+  // Clear the list after processing
+  agentService.clearAgentsToResume();
+  log.log(' Auto-resume complete');
 }

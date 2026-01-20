@@ -29,6 +29,43 @@ export function setLastBossCommand(bossId: string, command: string): void {
 }
 
 /**
+ * Build customAgentConfig for an agent based on its class instructions and skills
+ * Returns undefined if no instructions or skills are configured
+ */
+export function buildCustomAgentConfig(agentId: string, agentClass: string): { name: string; definition: { description: string; prompt: string } } | undefined {
+  // Skip boss agents - they have their own prompt handling
+  if (agentClass === 'boss') {
+    return undefined;
+  }
+
+  const classInstructions = customClassService.getClassInstructions(agentClass);
+  const skillsContent = skillService.buildSkillPromptContent(agentId, agentClass);
+
+  // Combine instructions and skills into a single prompt
+  let combinedPrompt = '';
+  if (classInstructions) {
+    combinedPrompt += classInstructions;
+  }
+  if (skillsContent) {
+    if (combinedPrompt) combinedPrompt += '\n\n';
+    combinedPrompt += skillsContent;
+  }
+
+  if (!combinedPrompt) {
+    return undefined;
+  }
+
+  const customClass = customClassService.getCustomClass(agentClass);
+  return {
+    name: customClass?.id || agentClass,
+    definition: {
+      description: customClass?.description || `Agent class: ${agentClass}`,
+      prompt: combinedPrompt,
+    },
+  };
+}
+
+/**
  * Handle send_command message
  * Routes commands differently for boss agents vs regular agents
  */
@@ -99,35 +136,12 @@ async function handleRegularAgentCommand(
   command: string,
   agent: { id: string; name: string; class: string }
 ): Promise<void> {
-  // Build custom agent config combining:
-  // 1. Custom class instructions (if any)
-  // 2. Skills assigned to this agent (via class or directly)
+  const customAgentConfig = buildCustomAgentConfig(agentId, agent.class);
 
-  const classInstructions = customClassService.getClassInstructions(agent.class);
-  const skillsContent = skillService.buildSkillPromptContent(agentId, agent.class);
-
-  // Combine instructions and skills into a single prompt
-  let combinedPrompt = '';
-  if (classInstructions) {
-    combinedPrompt += classInstructions;
-  }
-  if (skillsContent) {
-    if (combinedPrompt) combinedPrompt += '\n\n';
-    combinedPrompt += skillsContent;
-  }
-
-  // Build custom agent config if we have any instructions or skills
-  let customAgentConfig: { name: string; definition: { description: string; prompt: string } } | undefined;
-  if (combinedPrompt) {
-    const customClass = customClassService.getCustomClass(agent.class);
-    customAgentConfig = {
-      name: customClass?.id || agent.class,
-      definition: {
-        description: customClass?.description || `Agent class: ${agent.class}`,
-        prompt: combinedPrompt,
-      },
-    };
-    log.log(` Agent ${agent.name} using custom agent config (${combinedPrompt.length} chars: ${classInstructions ? 'instructions' : ''}${classInstructions && skillsContent ? ' + ' : ''}${skillsContent ? 'skills' : ''})`);
+  if (customAgentConfig) {
+    log.log(` Agent ${agent.name} customAgentConfig: name=${customAgentConfig.name}, promptLen=${customAgentConfig.definition.prompt.length}`);
+  } else {
+    log.log(` Agent ${agent.name} NO customAgentConfig (no instructions or skills)`);
   }
 
   try {
