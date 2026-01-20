@@ -5,6 +5,7 @@ import { formatNumber, intToHex, formatTokens, formatTimeAgo, formatIdleTime, ge
 import { ModelPreview } from './ModelPreview';
 import { AgentEditModal } from './AgentEditModal';
 import { ContextViewModal } from './ContextViewModal';
+import { useToast } from './Toast';
 import type { Agent, DrawingArea, AgentSupervisorHistoryEntry, PermissionMode, DelegationDecision, CustomAgentClass, BuiltInAgentClass } from '../../shared/types';
 import { PERMISSION_MODES, AGENT_CLASSES } from '../../shared/types';
 
@@ -395,6 +396,7 @@ interface RememberedPattern {
 function SingleAgentPanel({ agent: agentProp, onFocusAgent, onKillAgent, onCallSubordinates, onOpenAreaExplorer }: SingleAgentPanelProps) {
   const state = useStore();
   const customClasses = useCustomAgentClassesArray();
+  const { showToast } = useToast();
   // Get the latest agent data from the store to ensure we have current values
   const agent = state.agents.get(agentProp.id) || agentProp;
   const classConfig = getClassConfig(agent.class, customClasses);
@@ -829,8 +831,13 @@ function SingleAgentPanel({ agent: agentProp, onFocusAgent, onKillAgent, onCallS
           <div
             className="unit-resume-cmd-text"
             title="Click to copy"
-            onClick={() => {
-              navigator.clipboard.writeText(`claude --resume ${agent.sessionId}`);
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(`claude --resume ${agent.sessionId}`);
+                showToast('success', 'Copied!', 'Resume command copied to clipboard', 2000);
+              } catch (err) {
+                showToast('error', 'Error', 'Failed to copy to clipboard', 3000);
+              }
             }}
           >
             claude --resume {agent.sessionId}

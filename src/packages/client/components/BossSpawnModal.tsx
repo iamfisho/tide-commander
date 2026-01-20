@@ -38,6 +38,7 @@ export function BossSpawnModal({ isOpen, onClose, onSpawnStart, onSpawnEnd }: Bo
   const [selectedModel, setSelectedModel] = useState<ClaudeModel>('haiku');
   const [selectedSubordinates, setSelectedSubordinates] = useState<Set<string>>(new Set());
   const nameInputRef = useRef<HTMLInputElement>(null);
+  const hasInitializedRef = useRef(false);
 
   // Get custom class config if selected class is custom
   const selectedCustomClass = useMemo(() => {
@@ -67,9 +68,10 @@ export function BossSpawnModal({ isOpen, onClose, onSpawnStart, onSpawnEnd }: Bo
     (agent) => !agent.isBoss && agent.class !== 'boss' && !agent.bossId
   );
 
-  // Generate a new name when modal opens
+  // Generate a new name when modal opens (only once per open)
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !hasInitializedRef.current) {
+      hasInitializedRef.current = true;
       const usedNames = new Set(Array.from(agents.values()).map((a) => a.name));
       setName(getRandomBossName(usedNames));
       setSelectedSubordinates(new Set());
@@ -77,6 +79,9 @@ export function BossSpawnModal({ isOpen, onClose, onSpawnStart, onSpawnEnd }: Bo
         nameInputRef.current.focus();
         nameInputRef.current.select();
       }
+    } else if (!isOpen) {
+      // Reset the flag when modal closes so it reinitializes next time
+      hasInitializedRef.current = false;
     }
   }, [isOpen, agents]);
 
