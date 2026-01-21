@@ -1,5 +1,7 @@
 # 🌊 Tide Commander
 
+![Tide Commander Preview](docs/preview.png)
+
 A game-like Claude Code orchestrator. Deploy, position, and command multiple Claude Code instances on a strategic battlefield inspired by RTS games like Warcraft.
 
 ## 💡 Why Tide Commander?
