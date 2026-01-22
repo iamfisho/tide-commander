@@ -670,7 +670,7 @@ export const AgentDebugPanel: React.FC<AgentDebugPanelProps> = ({
               </div>
             ) : (
               filteredLogs.map((log) => {
-                const isExpanded = expandedLogIds.has(log.id);
+                const isExpanded: boolean = expandedLogIds.has(log.id);
                 const levelInfo = getLogLevelInfo(log.level);
 
                 return (
@@ -690,11 +690,11 @@ export const AgentDebugPanel: React.FC<AgentDebugPanelProps> = ({
                       <span className="message-time">{formatTime(log.timestamp)}</span>
                     </div>
 
-                    {isExpanded && log.data && (
+                    {isExpanded && log.data !== undefined ? (
                       <div className="message-body">
                         <pre><>{highlightJson(JSON.stringify(log.data as Record<string, unknown>, null, 2))}</></pre>
                       </div>
-                    )}
+                    ) : null}
                   </div>
                 );
               })
