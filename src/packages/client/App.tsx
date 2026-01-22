@@ -19,6 +19,7 @@ import { ControlsModal } from './components/ControlsModal';
 import { BuildingConfigModal } from './components/BuildingConfigModal';
 import { SkillsPanel } from './components/SkillsPanel';
 import { DrawingModeIndicator } from './components/DrawingModeIndicator';
+import { VersionDisplay } from './components/VersionDisplay';
 import { matchesShortcut } from './store/shortcuts';
 import { FPSMeter } from './components/FPSMeter';
 import { profileRender } from './utils/profiling';
@@ -709,6 +710,7 @@ function AppContent() {
     <div className={`app ${state.terminalOpen ? 'terminal-open' : ''} ${isDrawingMode ? 'drawing-mode' : ''} mobile-view-${mobileView}`}>
       {/* FPS Meter */}
       <FPSMeter visible={state.settings.showFPS} position="top-left" />
+      <VersionDisplay />
 
       <main className="main-content">
         <div className="battlefield-container">

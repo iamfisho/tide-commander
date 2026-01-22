@@ -160,12 +160,24 @@ async function handleRegularAgentCommand(
     log.log(` Agent ${agent.name} NO customAgentConfig (no instructions or skills)`);
   }
 
-  // Check if agent has pending skill updates - inject into message if so
+  // Check if agent has pending updates - inject into message if so
   let finalCommand = command;
+
+  // Property updates (class, permissionMode, useChrome)
+  if (agentService.hasPendingPropertyUpdates(agentId)) {
+    const propertyNotification = agentService.buildPropertyUpdateNotification(agentId);
+    if (propertyNotification) {
+      finalCommand = propertyNotification + finalCommand;
+      log.log(` Agent ${agent.name}: Injecting property update notification (${propertyNotification.length} chars)`);
+    }
+    agentService.clearPendingPropertyUpdates(agentId);
+  }
+
+  // Skill updates
   if (skillService.hasPendingSkillUpdates(agentId)) {
     const skillNotification = skillService.buildSkillUpdateNotification(agentId, agent.class as import('../../../shared/types.js').AgentClass);
     if (skillNotification) {
-      finalCommand = skillNotification + command;
+      finalCommand = skillNotification + finalCommand;
       log.log(` Agent ${agent.name}: Injecting skill update notification (${skillNotification.length} chars)`);
     }
     skillService.clearPendingSkillUpdates(agentId);

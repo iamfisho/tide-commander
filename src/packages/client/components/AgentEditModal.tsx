@@ -267,10 +267,10 @@ export function AgentEditModal({ agent, isOpen, onClose }: AgentEditModalProps) 
               </div>
             </div>
 
-            {/* Model change warning */}
+            {/* Model change notice */}
             {selectedModel !== (agent.model || 'sonnet') && (
-              <div className="model-change-warning">
-                ⚠️ Changing model will restart the agent session
+              <div className="model-change-notice">
+                Context preserved - will resume with new model
               </div>
             )}
 

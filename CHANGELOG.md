@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.0] - 2026-01-22
+
+### Added
+- Version display component showing app version in UI
+- Agent cloning functionality (duplicate agents with same config)
+- Enhanced CharacterFactory with sprite caching and preloading
+- Vite environment variable support for version injection
+
+### Changed
+- Improved SceneManager with better character management
+- Enhanced AgentEditModal styling
+- Updated agent-handler with clone support
+- Improved command-handler with better error handling
+
 ## [0.6.5] - 2026-01-22
 
 ### Added

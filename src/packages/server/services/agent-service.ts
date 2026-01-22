@@ -33,6 +33,19 @@ interface AgentToResume {
 }
 const agentsToResume: AgentToResume[] = [];
 
+// Track agents with pending property updates that need notification on next command
+// These are changes that affect the agent's behavior but don't require session restart
+// Note: Model changes use hot restart (stop + resume with new model) instead of pending updates
+interface PendingPropertyUpdate {
+  classChanged?: boolean;
+  oldClass?: string;
+  permissionModeChanged?: boolean;
+  oldPermissionMode?: string;
+  useChromeChanged?: boolean;
+  oldUseChrome?: boolean;
+}
+const pendingPropertyUpdates = new Map<string, PendingPropertyUpdate>();
+
 // ============================================================================
 // Initialization
 // ============================================================================
@@ -237,6 +250,35 @@ export function updateAgent(id: string, updates: Partial<Agent>, updateActivity 
   const sessionIdBefore = agent.sessionId;
   const hasSessionIdInUpdates = 'sessionId' in updates;
 
+  // Track pending property updates for notification on next command
+  // (these are changes that affect behavior but don't require restart)
+  const pending = pendingPropertyUpdates.get(id) || {};
+
+  if (updates.class !== undefined && updates.class !== agent.class) {
+    pending.classChanged = true;
+    pending.oldClass = agent.class;
+    log.log(`Agent ${agent.name}: Class change pending (${agent.class} -> ${updates.class})`);
+  }
+
+  if (updates.permissionMode !== undefined && updates.permissionMode !== agent.permissionMode) {
+    pending.permissionModeChanged = true;
+    pending.oldPermissionMode = agent.permissionMode;
+    log.log(`Agent ${agent.name}: Permission mode change pending (${agent.permissionMode} -> ${updates.permissionMode})`);
+  }
+
+  if (updates.useChrome !== undefined && updates.useChrome !== agent.useChrome) {
+    pending.useChromeChanged = true;
+    pending.oldUseChrome = agent.useChrome;
+    log.log(`Agent ${agent.name}: Chrome mode change pending (${agent.useChrome} -> ${updates.useChrome})`);
+  }
+
+  // Note: Model changes are handled via hot restart (stop + resume with new model)
+  // in agent-handler.ts, not via pending updates
+
+  if (Object.keys(pending).length > 0) {
+    pendingPropertyUpdates.set(id, pending);
+  }
+
   // Only update lastActivity for real activity (not position changes, etc.)
   if (updateActivity) {
     Object.assign(agent, updates, { lastActivity: Date.now() });
@@ -369,6 +411,80 @@ export async function searchAgentHistory(agentId: string, query: string, limit: 
 
   const result = await searchSession(agent.cwd, agent.sessionId, query, limit);
   return result || { matches: [], totalMatches: 0 };
+}
+
+// ============================================================================
+// Pending Property Updates (for live notification injection)
+// ============================================================================
+
+/**
+ * Check if an agent has pending property updates
+ */
+export function hasPendingPropertyUpdates(agentId: string): boolean {
+  return pendingPropertyUpdates.has(agentId);
+}
+
+/**
+ * Get pending property updates for an agent
+ */
+export function getPendingPropertyUpdates(agentId: string): PendingPropertyUpdate | undefined {
+  return pendingPropertyUpdates.get(agentId);
+}
+
+/**
+ * Clear pending property updates for an agent
+ */
+export function clearPendingPropertyUpdates(agentId: string): void {
+  pendingPropertyUpdates.delete(agentId);
+}
+
+/**
+ * Build a notification message for property updates
+ * This is injected into the next command to notify the agent of changes
+ */
+export function buildPropertyUpdateNotification(agentId: string): string {
+  const pending = pendingPropertyUpdates.get(agentId);
+  if (!pending) return '';
+
+  const agent = agents.get(agentId);
+  if (!agent) return '';
+
+  const notifications: string[] = [];
+
+  if (pending.classChanged) {
+    notifications.push(`- Your agent class has changed from "${pending.oldClass}" to "${agent.class}". Adjust your behavior accordingly.`);
+  }
+
+  if (pending.permissionModeChanged) {
+    const modeDesc = agent.permissionMode === 'bypass'
+      ? 'bypass (you can execute tools without asking for permission)'
+      : 'interactive (you should ask for permission before executing tools)';
+    notifications.push(`- Your permission mode has changed to: ${modeDesc}`);
+  }
+
+  if (pending.useChromeChanged) {
+    const chromeDesc = agent.useChrome
+      ? 'Chrome browser is now enabled for web interactions'
+      : 'Chrome browser has been disabled';
+    notifications.push(`- ${chromeDesc}`);
+  }
+
+  // Note: Model changes are handled via hot restart, not pending notifications
+
+  if (notifications.length === 0) return '';
+
+  return `
+---
+# ⚙️ CONFIGURATION UPDATE
+
+Your configuration has been updated:
+
+${notifications.join('\n')}
+
+Please acknowledge this update and continue with your work.
+---
+
+`;
 }
 
 // ============================================================================

@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
 import react from '@vitejs/plugin-react';
+import pkg from './package.json';
 
 // Port configuration - can be overridden via environment variables
 const SERVER_PORT = process.env.PORT || 5174;
@@ -9,6 +10,9 @@ const VITE_HOST = process.env.LISTEN_ALL_INTERFACES ? '0.0.0.0' : '127.0.0.1';
 
 export default defineConfig({
   plugins: [react()],
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
   root: '.',
   publicDir: 'public',
   resolve: {

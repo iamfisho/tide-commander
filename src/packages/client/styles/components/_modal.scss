@@ -809,14 +809,14 @@
   color: $text-secondary;
 }
 
-// Model change warning
-.model-change-warning {
+// Model change notice (informational, not warning since it no longer restarts)
+.model-change-notice {
   padding: 8px 10px;
-  background: rgba($accent-orange, 0.15);
-  border: 1px solid rgba($accent-orange, 0.3);
+  background: rgba($accent-cyan, 0.1);
+  border: 1px solid rgba($accent-cyan, 0.25);
   border-radius: $radius-sm;
   font-size: 11px;
-  color: $accent-orange;
+  color: $accent-cyan;
 }
 
 // Compact skills chips for edit modal

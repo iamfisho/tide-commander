@@ -503,9 +503,31 @@ export class SceneManager {
     for (const [agentId, meshData] of this.agentMeshes) {
       const agent = state.agents.get(agentId);
       if (agent) {
-        const isSelected = state.selectedAgentIds.has(agentId);
-        const isPartOfSelectedHierarchy = subordinateIdsOfSelectedBosses.has(agentId) || bossIdsToHighlight.has(agentId);
-        this.characterFactory.updateVisuals(meshData.group, agent, isSelected, isPartOfSelectedHierarchy && !isSelected);
+        // Check if class changed and update model if needed
+        const updatedMeshData = this.characterFactory.updateAgentClass(meshData, agent);
+        if (updatedMeshData) {
+          // Model was replaced, update the stored meshData
+          this.agentMeshes.set(agentId, updatedMeshData);
+
+          // Apply current character scale to the new body (with boss multiplier if applicable)
+          const newBody = updatedMeshData.group.getObjectByName('characterBody');
+          if (newBody) {
+            const bossMultiplier = (agent.isBoss || agent.class === 'boss') ? 1.5 : 1.0;
+            newBody.scale.setScalar(this.characterScale * bossMultiplier);
+          }
+
+          // Start animation based on agent's current status
+          this.updateStatusAnimation(agent, updatedMeshData);
+
+          // Use the new meshData for visual updates
+          const isSelected = state.selectedAgentIds.has(agentId);
+          const isPartOfSelectedHierarchy = subordinateIdsOfSelectedBosses.has(agentId) || bossIdsToHighlight.has(agentId);
+          this.characterFactory.updateVisuals(updatedMeshData.group, agent, isSelected, isPartOfSelectedHierarchy && !isSelected);
+        } else {
+          const isSelected = state.selectedAgentIds.has(agentId);
+          const isPartOfSelectedHierarchy = subordinateIdsOfSelectedBosses.has(agentId) || bossIdsToHighlight.has(agentId);
+          this.characterFactory.updateVisuals(meshData.group, agent, isSelected, isPartOfSelectedHierarchy && !isSelected);
+        }
       }
     }
   }

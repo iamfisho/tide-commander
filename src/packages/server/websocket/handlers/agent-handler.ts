@@ -297,8 +297,9 @@ export async function handleUpdateAgentProperties(
     return;
   }
 
-  // Track if model changed (requires session restart)
+  // Track if model changed (requires hot restart to apply new model while preserving context)
   const modelChanged = updates.model !== undefined && updates.model !== agent.model;
+  const sessionId = agent.sessionId; // Save before update
 
   // Update agent properties
   const agentUpdates: Partial<Agent> = {};
@@ -320,27 +321,35 @@ export async function handleUpdateAgentProperties(
   }
 
   // Apply agent property updates if any
+  // agentService.updateAgent tracks pending property changes for notification on next command
   if (Object.keys(agentUpdates).length > 0) {
     agentService.updateAgent(agentId, agentUpdates, false);
   }
 
-  // If model changed, restart the agent session
-  if (modelChanged) {
-    log.log(`Agent ${agent.name}: Model changed to ${updates.model}, restarting session`);
+  // If model changed, do a hot restart: stop process, resume with new model
+  // This preserves context by using --resume with the existing sessionId
+  if (modelChanged && sessionId) {
+    log.log(`Agent ${agent.name}: Model changed to ${updates.model}, hot restarting with --resume to preserve context`);
     try {
+      // Stop the current Claude process
       await claudeService.stopAgent(agentId);
+
+      // Mark as idle temporarily (the resume will happen on next command)
+      // Keep sessionId to allow resume with new model
       agentService.updateAgent(agentId, {
         status: 'idle',
         currentTask: undefined,
         currentTool: undefined,
-        sessionId: undefined, // Clear session to force new one with new model
-        tokensUsed: 0,
-        contextUsed: 0,
-      });
-      ctx.sendActivity(agentId, `Session restarted - model changed to ${updates.model}`);
+        // Keep sessionId! This allows --resume to work with the new model
+      }, false);
+
+      ctx.sendActivity(agentId, `Model changed to ${updates.model} - context preserved`);
     } catch (err) {
-      log.error(`Failed to restart agent ${agent.name} after model change:`, err);
+      log.error(`Failed to hot restart agent ${agent.name} after model change:`, err);
     }
+  } else if (modelChanged && !sessionId) {
+    // No existing session, just update the model (will apply on next start)
+    log.log(`Agent ${agent.name}: Model changed to ${updates.model}, will apply on next session start`);
   }
 
   // Handle skill reassignment

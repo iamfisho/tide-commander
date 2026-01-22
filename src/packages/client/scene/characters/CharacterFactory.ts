@@ -777,6 +777,82 @@ export class CharacterFactory {
   }
 
   /**
+   * Check if agent class changed and update the 3D model if needed.
+   * Returns updated AgentMeshData if model was replaced, null otherwise.
+   */
+  updateAgentClass(meshData: AgentMeshData, agent: Agent): AgentMeshData | null {
+    const { group } = meshData;
+    const currentClass = group.userData.agentClass;
+
+    // No change
+    if (currentClass === agent.class) {
+      return null;
+    }
+
+    console.log(`[CharacterFactory] Agent ${agent.name} class changed: ${currentClass} -> ${agent.class}`);
+
+    // Get the new model file for the new class
+    const newModelFile = this.getModelFile(agent.class);
+    const cloneResult = this.characterLoader.cloneByModelFile(newModelFile);
+
+    if (!cloneResult) {
+      console.warn(`[CharacterFactory] Could not load model for class ${agent.class}, keeping current model`);
+      group.userData.agentClass = agent.class; // Still update the class even if model fails
+      return null;
+    }
+
+    // Find and remove the old character body
+    const oldBody = group.getObjectByName('characterBody');
+    if (oldBody) {
+      group.remove(oldBody);
+      // Dispose old body resources
+      oldBody.traverse((child) => {
+        if (child instanceof THREE.Mesh || child instanceof THREE.SkinnedMesh) {
+          child.geometry?.dispose();
+          if (Array.isArray(child.material)) {
+            child.material.forEach(mat => this.disposeMaterial(mat));
+          } else if (child.material) {
+            this.disposeMaterial(child.material);
+          }
+        }
+      });
+    }
+
+    // Stop old mixer
+    if (meshData.mixer) {
+      meshData.mixer.stopAllAction();
+      meshData.mixer.uncacheRoot(group);
+    }
+
+    // Add new character body
+    cloneResult.mesh.name = 'characterBody';
+    group.add(cloneResult.mesh);
+
+    // Create new mixer and animations
+    const mixer = new THREE.AnimationMixer(cloneResult.mesh);
+    const animations = new Map<string, THREE.AnimationClip>();
+    for (const clip of cloneResult.animations) {
+      const normalizedName = clip.name.toLowerCase();
+      animations.set(normalizedName, clip);
+    }
+
+    // Update stored class
+    group.userData.agentClass = agent.class;
+
+    // Update name label with new class color
+    this.updateNameLabel(group, agent.name, agent.class);
+
+    console.log(`[CharacterFactory] Agent ${agent.name} model updated to ${newModelFile}`);
+
+    return {
+      group,
+      mixer,
+      animations,
+      currentAction: null,
+    };
+  }
+
+  /**
    * Update visual state of an agent mesh.
    * @param isSubordinateOfSelectedBoss - true if this agent is a subordinate of the currently selected boss
    */
