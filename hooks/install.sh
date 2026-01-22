@@ -32,8 +32,8 @@ if [ -f "${CLAUDE_SETTINGS_FILE}" ]; then
   # Update settings with jq (new array-based format required since Claude Code 1.0.51+)
   UPDATED_SETTINGS=$(jq --arg hookPath "${TIDE_HOOKS_DIR}/tide-hook.sh" '
     .hooks = (.hooks // {}) |
-    .hooks.PreToolUse = [{"hooks": [{"type": "command", "command": $hookPath}]}] |
-    .hooks.PostToolUse = [{"hooks": [{"type": "command", "command": $hookPath}]}] |
+    .hooks.PreToolUse = [{"matcher": "*", "hooks": [{"type": "command", "command": $hookPath}]}] |
+    .hooks.PostToolUse = [{"matcher": "*", "hooks": [{"type": "command", "command": $hookPath}]}] |
     .hooks.Stop = [{"hooks": [{"type": "command", "command": $hookPath}]}] |
     .hooks.UserPromptSubmit = [{"hooks": [{"type": "command", "command": $hookPath}]}]
   ' "${CLAUDE_SETTINGS_FILE}")
@@ -44,8 +44,8 @@ else
   cat > "${CLAUDE_SETTINGS_FILE}" << EOF
 {
   "hooks": {
-    "PreToolUse": [{"hooks": [{"type": "command", "command": "${TIDE_HOOKS_DIR}/tide-hook.sh"}]}],
-    "PostToolUse": [{"hooks": [{"type": "command", "command": "${TIDE_HOOKS_DIR}/tide-hook.sh"}]}],
+    "PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": "${TIDE_HOOKS_DIR}/tide-hook.sh"}]}],
+    "PostToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": "${TIDE_HOOKS_DIR}/tide-hook.sh"}]}],
     "Stop": [{"hooks": [{"type": "command", "command": "${TIDE_HOOKS_DIR}/tide-hook.sh"}]}],
     "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "${TIDE_HOOKS_DIR}/tide-hook.sh"}]}]
   }
