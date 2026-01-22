@@ -18,6 +18,7 @@ import { Spotlight } from './components/Spotlight';
 import { ControlsModal } from './components/ControlsModal';
 import { BuildingConfigModal } from './components/BuildingConfigModal';
 import { SkillsPanel } from './components/SkillsPanel';
+import { DrawingModeIndicator } from './components/DrawingModeIndicator';
 import { matchesShortcut } from './store/shortcuts';
 import { FPSMeter } from './components/FPSMeter';
 import { profileRender } from './utils/profiling';
@@ -318,7 +319,12 @@ function AppContent() {
   // Handle tool changes
   const handleToolChange = useCallback((tool: 'rectangle' | 'circle' | 'select' | null) => {
     sceneRef.current?.setDrawingTool(tool);
-  }, []);
+    // Show toast when entering drawing mode
+    if (tool === 'rectangle' || tool === 'circle') {
+      const toolName = tool === 'rectangle' ? 'Rectangle' : 'Circle';
+      showToast('info', `${toolName} Tool`, 'Click and drag on the battlefield to draw an area', 3000);
+    }
+  }, [showToast]);
 
   // Handle focus agent
   const handleFocusAgent = useCallback((agentId: string) => {
@@ -348,7 +354,8 @@ function AppContent() {
   // Handle starting new area drawing
   const handleNewArea = useCallback(() => {
     sceneRef.current?.setDrawingTool('rectangle');
-  }, []);
+    showToast('info', 'Rectangle Tool', 'Click and drag on the battlefield to draw an area', 3000);
+  }, [showToast]);
 
   // Handle editing a building
   const handleEditBuilding = useCallback((buildingId: string) => {
@@ -579,12 +586,18 @@ function AppContent() {
       const target = e.target as HTMLElement;
       const isInputFocused = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
 
-      // Escape to deselect or close modal/terminal
+      // Escape to deselect or close modal/terminal/drawing mode
       const deselectShortcut = shortcuts.find(s => s.id === 'deselect-all');
       if (matchesShortcut(e, deselectShortcut)) {
+        const currentState = store.getState();
+        // Exit drawing mode first if active
+        if (currentState.activeTool === 'rectangle' || currentState.activeTool === 'circle') {
+          sceneRef.current?.setDrawingTool(null);
+          return;
+        }
         if (spawnModal.isOpen) {
           spawnModal.close();
-        } else if (store.getState().terminalOpen) {
+        } else if (currentState.terminalOpen) {
           // Close terminal first if open (prevents selection corruption on double-ESC)
           store.setTerminalOpen(false);
         } else {
@@ -684,8 +697,16 @@ function AppContent() {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [spawnModal, commanderModal, explorerModal, spotlightModal, deleteConfirmModal, controlsModal]);
 
+  // Check if in drawing mode
+  const isDrawingMode = state.activeTool === 'rectangle' || state.activeTool === 'circle';
+
+  // Handle exit drawing mode
+  const handleExitDrawingMode = useCallback(() => {
+    sceneRef.current?.setDrawingTool(null);
+  }, []);
+
   return (
-    <div className={`app ${state.terminalOpen ? 'terminal-open' : ''} mobile-view-${mobileView}`}>
+    <div className={`app ${state.terminalOpen ? 'terminal-open' : ''} ${isDrawingMode ? 'drawing-mode' : ''} mobile-view-${mobileView}`}>
       {/* FPS Meter */}
       <FPSMeter visible={state.settings.showFPS} position="top-left" />
 
@@ -768,6 +789,12 @@ function AppContent() {
           <circle cx="12" cy="12" r="3" />
         </svg>
       </button>
+
+      {/* Drawing Mode Indicator */}
+      <DrawingModeIndicator
+        activeTool={state.activeTool}
+        onExit={handleExitDrawingMode}
+      />
 
       {/* Toolbox sidebar overlay */}
       <Toolbox

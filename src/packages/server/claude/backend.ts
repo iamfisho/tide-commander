@@ -126,7 +126,7 @@ export class ClaudeBackend implements CLIBackend {
   /**
    * Parse Claude CLI raw event into normalized StandardEvent
    */
-  parseEvent(rawEvent: unknown): StandardEvent | null {
+  parseEvent(rawEvent: unknown): StandardEvent | StandardEvent[] | null {
     const event = rawEvent as ClaudeRawEvent;
 
     // Log ALL events to understand what we're receiving

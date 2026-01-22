@@ -692,7 +692,7 @@ export const AgentDebugPanel: React.FC<AgentDebugPanelProps> = ({
 
                     {isExpanded && log.data && (
                       <div className="message-body">
-                        <pre>{highlightJson(JSON.stringify(log.data, null, 2))}</pre>
+                        <pre><>{highlightJson(JSON.stringify(log.data as Record<string, unknown>, null, 2))}</></pre>
                       </div>
                     )}
                   </div>
