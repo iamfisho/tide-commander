@@ -5,6 +5,21 @@
  * for debugging purposes. Integrates with the Guake Terminal UI.
  */
 
+/**
+ * Generate a UUID, with fallback for non-secure contexts where crypto.randomUUID is unavailable
+ */
+function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  // Fallback for non-secure contexts (HTTP)
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 export interface AgentDebugMessage {
   id: string;
   agentId: string;
@@ -69,7 +84,7 @@ class AgentDebuggerService {
       const parsed = JSON.parse(raw);
       console.log('[AgentDebugger] Capturing SENT message for agent:', agentId, 'type:', parsed.type);
       this.addMessage(agentId, {
-        id: crypto.randomUUID(),
+        id: generateUUID(),
         agentId,
         direction: 'sent',
         type: parsed.type || 'unknown',
@@ -80,7 +95,7 @@ class AgentDebuggerService {
       });
     } catch (error) {
       this.addMessage(agentId, {
-        id: crypto.randomUUID(),
+        id: generateUUID(),
         agentId,
         direction: 'sent',
         type: 'parse_error',
@@ -102,7 +117,7 @@ class AgentDebuggerService {
       const parsed = JSON.parse(raw);
       console.log('[AgentDebugger] Capturing RECEIVED message for agent:', agentId, 'type:', parsed.type);
       this.addMessage(agentId, {
-        id: crypto.randomUUID(),
+        id: generateUUID(),
         agentId,
         direction: 'received',
         type: parsed.type || 'unknown',
@@ -113,7 +128,7 @@ class AgentDebuggerService {
       });
     } catch (error) {
       this.addMessage(agentId, {
-        id: crypto.randomUUID(),
+        id: generateUUID(),
         agentId,
         direction: 'received',
         type: 'parse_error',
@@ -218,7 +233,7 @@ class AgentDebuggerService {
    */
   log(level: DebugLog['level'], message: string, data?: unknown, source?: string): void {
     const entry: DebugLog = {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       level,
       message,
       data,
