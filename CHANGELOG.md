@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.4] - 2026-01-22
+
+### Changed
+- Boss agents can now use tools directly while preferring delegation to subordinates
+- Updated trackpad gesture handler comments to be browser-agnostic (not Safari-specific)
+- Updated controls modal text to be platform-agnostic (removed Mac-specific wording)
+
 ## [0.6.3] - 2026-01-22
 
 ### Removed

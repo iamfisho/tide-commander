@@ -89,7 +89,7 @@ export class TrackpadGestureHandler {
   private callbacks: TrackpadCallbacks;
   private canvas: HTMLCanvasElement;
 
-  // Safari GestureEvent state
+  // GestureEvent state (optional browser enhancement)
   private isGestureActive = false;
   private gestureScale = 1;
 
@@ -106,7 +106,7 @@ export class TrackpadGestureHandler {
   }
 
   /**
-   * Set up Safari GestureEvent listeners for pinch zoom
+   * Set up GestureEvent listeners for pinch zoom (if browser supports it)
    */
   private setupGestureEvents(): void {
     if ('GestureEvent' in window) {
@@ -160,7 +160,7 @@ export class TrackpadGestureHandler {
   }
 
   /**
-   * Safari GestureEvent handlers for pinch zoom
+   * GestureEvent handlers for pinch zoom
    */
   private onGestureStart = (event: Event): void => {
     const gestureEvent = event as unknown as { scale: number; preventDefault: () => void };

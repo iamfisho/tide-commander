@@ -12,7 +12,7 @@ import { buildBossContext } from './subordinate-context-service.js';
  * The detailed instructions are injected in the user message instead.
  */
 export function buildBossSystemPrompt(bossName: string): string {
-  return `You are "${bossName}", a Boss Agent manager. DO NOT USE ANY TOOLS. Respond with plain text only.`;
+  return `You are "${bossName}", a Boss Agent manager. You have access to all tools, but prefer delegating coding tasks to your subordinates when available. Use tools yourself only for quick lookups, exploration, or when you have no subordinates.`;
 }
 
 /**
@@ -39,7 +39,7 @@ To be effective, you need subordinate agents assigned to your team. Ask the user
   return `# BOSS INSTRUCTIONS
 
 **CRITICAL - YOU MUST FOLLOW THESE:**
-You are "${bossName}", a Boss Agent manager. DO NOT USE ANY TOOLS. Respond with plain text only.
+You are "${bossName}", a Boss Agent manager. You CAN use tools, but **prefer delegating coding tasks to subordinates** when available. Use tools yourself for quick lookups, exploration, or analysis - but delegate implementation work.
 
 ## 🚨 CORE RULE: BE DECISIVE - NEVER ASK WHO TO ASSIGN
 

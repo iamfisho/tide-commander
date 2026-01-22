@@ -318,7 +318,7 @@ export function ControlsModal({ isOpen, onClose }: ControlsModalProps) {
         {activeTab === 'trackpad' && (
           <>
             <div className="shortcuts-modal-toolbar">
-              <span className="mouse-controls-subtitle">Mac trackpad gesture settings</span>
+              <span className="mouse-controls-subtitle">Trackpad gesture settings</span>
               <button className="shortcuts-reset-all-btn" onClick={handleResetAll}>
                 Reset
               </button>
@@ -337,7 +337,7 @@ export function ControlsModal({ isOpen, onClose }: ControlsModalProps) {
               ? 'Click on a shortcut to change it. Press Escape to cancel.'
               : activeTab === 'mouse'
                 ? 'Click binding to change. Hold modifiers (Alt/Shift/Ctrl) while clicking.'
-                : 'Configure Mac trackpad gestures. Enable/disable features and adjust sensitivity.'}
+                : 'Configure trackpad gestures. Enable/disable features and adjust sensitivity.'}
           </span>
         </div>
       </div>
